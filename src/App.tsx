@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from 'react'
 import {
   Users, Package, ClipboardList, Wallet, Plus, Search, Sparkles,
@@ -11,6 +10,7 @@ import {
   updateProduct, deleteProduct, getOrders, addOrder, updateOrderStatus,
   type OrderRecord
 } from './db/database'
+import Payments from './Payments'
 
 type Customer = {
   id: number
@@ -699,12 +699,15 @@ export default function App() {
         </main>
       )}
 
+      {tab === 'پرداخت‌ها' && <Payments />}
+
       <nav className="bottom-nav">
         {([
           ['خانه', Sparkles],
           ['مشتریان', Users],
           ['محصولات', Package],
-          ['سفارش‌ها', ClipboardList]
+          ['سفارش‌ها', ClipboardList],
+          ['پرداخت‌ها', Wallet]
         ] as const).map(([label, Icon]) => (
           <button
             key={label}
