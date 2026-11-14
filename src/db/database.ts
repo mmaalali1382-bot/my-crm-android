@@ -51,6 +51,25 @@ export type OrderRecord = {
   items: OrderItemRecord[];
 };
 
+export type PaymentRecord = {
+  id: number;
+  customerId: number;
+  customerName: string;
+  amount: number;
+  method: string;
+  notes: string | null;
+  createdAt: string;
+};
+
+export type CustomerBalanceRecord = {
+  customerId: number;
+  customerName: string;
+  phone: string;
+  totalOrders: number;
+  totalPaid: number;
+  balance: number;
+};
+
 export async function initializeDatabase(): Promise<SQLiteDBConnection> {
   if (db) return db;
 
@@ -117,6 +136,16 @@ export async function initializeDatabase(): Promise<SQLiteDBConnection> {
       unit_price REAL NOT NULL,
       unit_cost REAL NOT NULL DEFAULT 0,
       FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      amount REAL NOT NULL,
+      method TEXT NOT NULL DEFAULT 'نقدی',
+      notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(customer_id) REFERENCES customers(id)
     );
   `);
 
@@ -262,7 +291,6 @@ export async function getOrders(): Promise<OrderRecord[]> {
   `);
 
   const orders = (result.values || []) as Omit<OrderRecord, 'items'>[];
-
   const output: OrderRecord[] = [];
 
   for (const order of orders) {
@@ -371,7 +399,6 @@ export async function addOrder(
   }
 
   const finalTotal = total - discount;
-
   let transactionStarted = false;
 
   try {
@@ -424,9 +451,7 @@ export async function addOrder(
       );
 
       if (stockUpdate.changes?.changes !== 1) {
-        throw new Error(
-          `موجودی محصول ${item.productName} کافی نیست.`
-        );
+        throw new Error(`موجودی محصول ${item.productName} کافی نیست.`);
       }
     }
 
@@ -468,4 +493,154 @@ export async function updateOrderStatus(
     'UPDATE orders SET status=? WHERE id=?',
     [status, id]
   );
+}
+
+// محاسبه مانده حساب هر مشتری
+export async function getCustomerBalances(): Promise<CustomerBalanceRecord[]> {
+  const d = await initializeDatabase();
+
+  const result = await d.query(`
+    SELECT
+      c.id AS customerId,
+      c.name AS customerName,
+      c.phone AS phone,
+      COALESCE(o.totalOrders, 0) AS totalOrders,
+      COALESCE(p.totalPaid, 0) AS totalPaid,
+      COALESCE(o.totalOrders, 0) - COALESCE(p.totalPaid, 0) AS balance
+    FROM customers c
+    LEFT JOIN (
+      SELECT customer_id, SUM(final_total) AS totalOrders
+      FROM orders
+      WHERE status != 'لغو شده'
+      GROUP BY customer_id
+    ) o ON o.customer_id = c.id
+    LEFT JOIN (
+      SELECT customer_id, SUM(amount) AS totalPaid
+      FROM payments
+      GROUP BY customer_id
+    ) p ON p.customer_id = c.id
+    ORDER BY balance DESC, c.name ASC
+  `);
+
+  return (result.values || []) as CustomerBalanceRecord[];
+}
+
+// دریافت فهرست پرداخت‌ها
+export async function getPayments(): Promise<PaymentRecord[]> {
+  const d = await initializeDatabase();
+
+  const result = await d.query(`
+    SELECT
+      p.id,
+      p.customer_id AS customerId,
+      c.name AS customerName,
+      p.amount,
+      p.method,
+      p.notes,
+      p.created_at AS createdAt
+    FROM payments p
+    LEFT JOIN customers c ON c.id = p.customer_id
+    ORDER BY p.id DESC
+  `);
+
+  return (result.values || []) as PaymentRecord[];
+}
+
+// ثبت پرداخت با کنترل مانده بدهی
+export async function addPayment(
+  customerId: number,
+  amount: number,
+  method: string,
+  notes: string
+): Promise<void> {
+  const d = await initializeDatabase();
+
+  if (!Number.isInteger(customerId) || customerId <= 0) {
+    throw new Error('مشتری معتبر نیست.');
+  }
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error('مبلغ پرداخت باید بیشتر از صفر باشد.');
+  }
+
+  const allowedMethods = [
+    'نقدی',
+    'کارت‌به‌کارت',
+    'کارت‌خوان',
+    'واریز بانکی',
+    'سایر'
+  ];
+
+  if (!allowedMethods.includes(method)) {
+    throw new Error('روش پرداخت معتبر نیست.');
+  }
+
+  let transactionStarted = false;
+
+  try {
+    await d.beginTransaction();
+    transactionStarted = true;
+
+    const customer = await d.query(
+      'SELECT id FROM customers WHERE id = ?',
+      [customerId]
+    );
+
+    if (!customer.values?.length) {
+      throw new Error('مشتری پیدا نشد.');
+    }
+
+    const balanceResult = await d.query(
+      `SELECT
+        COALESCE((
+          SELECT SUM(final_total)
+          FROM orders
+          WHERE customer_id = ? AND status != 'لغو شده'
+        ), 0) -
+        COALESCE((
+          SELECT SUM(amount)
+          FROM payments
+          WHERE customer_id = ?
+        ), 0) AS balance`,
+      [customerId, customerId]
+    );
+
+    const balance = Number(balanceResult.values?.[0]?.balance || 0);
+
+    if (balance <= 0) {
+      throw new Error('این مشتری بدهی پرداخت‌نشده ندارد.');
+    }
+
+    if (amount > balance) {
+      throw new Error(
+        `مبلغ پرداخت از مانده بدهی بیشتر است. مانده فعلی: ${Math.floor(balance)} تومان`
+      );
+    }
+
+    await d.run(
+      `INSERT INTO payments(customer_id,amount,method,notes)
+       VALUES(?,?,?,?)`,
+      [
+        customerId,
+        amount,
+        method,
+        notes.trim() || null
+      ],
+      false
+    );
+
+    await d.commitTransaction();
+    transactionStarted = false;
+
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        await d.rollbackTransaction();
+      } catch {
+        // حفظ خطای اصلی
+      }
+    }
+
+    throw error;
+  }
 }
