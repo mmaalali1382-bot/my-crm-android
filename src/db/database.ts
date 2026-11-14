@@ -60,7 +60,13 @@ export async function initializeDatabase(): Promise<SQLiteDBConnection> {
   if (consistency.result && connection.result) {
     db = await sqlite.retrieveConnection(DB_NAME, false);
   } else {
-    db = await sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false);
+    db = await sqlite.createConnection(
+      DB_NAME,
+      false,
+      'no-encryption',
+      1,
+      false
+    );
   }
 
   await db.open();
@@ -114,19 +120,27 @@ export async function initializeDatabase(): Promise<SQLiteDBConnection> {
     );
   `);
 
+  await db.execute('PRAGMA foreign_keys = ON');
+
   return db;
 }
 
 export async function getCustomers(): Promise<CustomerRecord[]> {
   const d = await initializeDatabase();
+
   const r = await d.query(
     'SELECT id,name,phone,company,stage,notes FROM customers ORDER BY id DESC'
   );
+
   return (r.values || []) as CustomerRecord[];
 }
 
-export async function addCustomer(name: string, phone: string): Promise<void> {
+export async function addCustomer(
+  name: string,
+  phone: string
+): Promise<void> {
   const d = await initializeDatabase();
+
   await d.run(
     'INSERT INTO customers(name,phone,stage) VALUES(?,?,?)',
     [name.trim(), phone.trim(), 'مشتری جدید']
@@ -141,22 +155,32 @@ export async function updateCustomer(
   notes: string
 ): Promise<void> {
   const d = await initializeDatabase();
+
   await d.run(
     'UPDATE customers SET name=?,phone=?,company=?,notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=?',
-    [name.trim(), phone.trim(), company.trim() || null, notes.trim() || null, id]
+    [
+      name.trim(),
+      phone.trim(),
+      company.trim() || null,
+      notes.trim() || null,
+      id
+    ]
   );
 }
 
 export async function deleteCustomer(id: number): Promise<void> {
   const d = await initializeDatabase();
+
   await d.run('DELETE FROM customers WHERE id=?', [id]);
 }
 
 export async function getProducts(): Promise<ProductRecord[]> {
   const d = await initializeDatabase();
+
   const r = await d.query(
     'SELECT id,name,code,category,cost,price,stock,min_stock AS minStock FROM products ORDER BY id DESC'
   );
+
   return (r.values || []) as ProductRecord[];
 }
 
@@ -170,9 +194,18 @@ export async function addProduct(
   minStock: number
 ): Promise<void> {
   const d = await initializeDatabase();
+
   await d.run(
     'INSERT INTO products(name,code,category,cost,price,stock,min_stock) VALUES(?,?,?,?,?,?,?)',
-    [name.trim(), code.trim(), category.trim() || null, cost, price, stock, minStock]
+    [
+      name.trim(),
+      code.trim(),
+      category.trim() || null,
+      cost,
+      price,
+      stock,
+      minStock
+    ]
   );
 }
 
@@ -187,14 +220,25 @@ export async function updateProduct(
   minStock: number
 ): Promise<void> {
   const d = await initializeDatabase();
+
   await d.run(
     'UPDATE products SET name=?,code=?,category=?,cost=?,price=?,stock=?,min_stock=?,updated_at=CURRENT_TIMESTAMP WHERE id=?',
-    [name.trim(), code.trim(), category.trim() || null, cost, price, stock, minStock, id]
+    [
+      name.trim(),
+      code.trim(),
+      category.trim() || null,
+      cost,
+      price,
+      stock,
+      minStock,
+      id
+    ]
   );
 }
 
 export async function deleteProduct(id: number): Promise<void> {
   const d = await initializeDatabase();
+
   await d.run('DELETE FROM products WHERE id=?', [id]);
 }
 
@@ -254,10 +298,14 @@ export async function addOrder(
 ): Promise<void> {
   const d = await initializeDatabase();
 
-  if (!items.length) throw new Error('سفارش باید حداقل یک محصول داشته باشد.');
+  if (!items.length) {
+    throw new Error('سفارش باید حداقل یک محصول داشته باشد.');
+  }
+
   if (!Number.isInteger(customerId) || customerId <= 0) {
     throw new Error('مشتری معتبر نیست.');
   }
+
   if (!Number.isFinite(discount) || discount < 0) {
     throw new Error('مبلغ تخفیف معتبر نیست.');
   }
@@ -267,7 +315,9 @@ export async function addOrder(
     [customerId]
   );
 
-  if (!customer.values?.length) throw new Error('مشتری پیدا نشد.');
+  if (!customer.values?.length) {
+    throw new Error('مشتری پیدا نشد.');
+  }
 
   const preparedItems: {
     productId: number;
@@ -297,7 +347,10 @@ export async function addOrder(
       stock: number;
     } | undefined;
 
-    if (!product) throw new Error('یکی از محصولات پیدا نشد.');
+    if (!product) {
+      throw new Error('یکی از محصولات پیدا نشد.');
+    }
+
     if (product.stock < item.quantity) {
       throw new Error(`موجودی محصول ${product.name} کافی نیست.`);
     }
@@ -319,21 +372,32 @@ export async function addOrder(
 
   const finalTotal = total - discount;
 
-  await d.run('PRAGMA foreign_keys = ON');
+  let transactionStarted = false;
 
   try {
-    await d.run('BEGIN TRANSACTION');
+    await d.beginTransaction();
+    transactionStarted = true;
 
     const orderResult = await d.run(
       `INSERT INTO orders
        (customer_id,total,discount,final_total,status,notes)
        VALUES(?,?,?,?,?,?)`,
-      [customerId, total, discount, finalTotal, 'ثبت شده', notes.trim() || null]
+      [
+        customerId,
+        total,
+        discount,
+        finalTotal,
+        'ثبت شده',
+        notes.trim() || null
+      ],
+      false
     );
 
     const orderId = orderResult.changes?.lastId;
 
-    if (!orderId) throw new Error('ثبت سفارش انجام نشد.');
+    if (!orderId) {
+      throw new Error('ثبت سفارش انجام نشد.');
+    }
 
     for (const item of preparedItems) {
       await d.run(
@@ -347,18 +411,37 @@ export async function addOrder(
           item.quantity,
           item.unitPrice,
           item.unitCost
-        ]
+        ],
+        false
       );
 
-      await d.run(
-        'UPDATE products SET stock = stock - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [item.quantity, item.productId]
+      const stockUpdate = await d.run(
+        `UPDATE products
+         SET stock = stock - ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND stock >= ?`,
+        [item.quantity, item.productId, item.quantity],
+        false
       );
+
+      if (stockUpdate.changes?.changes !== 1) {
+        throw new Error(
+          `موجودی محصول ${item.productName} کافی نیست.`
+        );
+      }
     }
 
-    await d.run('COMMIT');
+    await d.commitTransaction();
+    transactionStarted = false;
+
   } catch (error) {
-    await d.run('ROLLBACK');
+    if (transactionStarted) {
+      try {
+        await d.rollbackTransaction();
+      } catch {
+        // حفظ خطای اصلی
+      }
+    }
+
     throw error;
   }
 }
@@ -367,12 +450,22 @@ export async function updateOrderStatus(
   id: number,
   status: string
 ): Promise<void> {
-  const allowed = ['ثبت شده', 'در حال آماده‌سازی', 'ارسال شده', 'تحویل شده', 'لغو شده'];
+  const allowed = [
+    'ثبت شده',
+    'در حال آماده‌سازی',
+    'ارسال شده',
+    'تحویل شده',
+    'لغو شده'
+  ];
 
   if (!allowed.includes(status)) {
     throw new Error('وضعیت سفارش معتبر نیست.');
   }
 
   const d = await initializeDatabase();
-  await d.run('UPDATE orders SET status=? WHERE id=?', [status, id]);
+
+  await d.run(
+    'UPDATE orders SET status=? WHERE id=?',
+    [status, id]
+  );
 }
