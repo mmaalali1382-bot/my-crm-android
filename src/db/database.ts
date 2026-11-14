@@ -1,4 +1,3 @@
-
 import {
   CapacitorSQLite,
   SQLiteConnection,
@@ -6,7 +5,6 @@ import {
 } from '@capacitor-community/sqlite';
 
 const DB_NAME = 'my_crm';
-
 const sqlite = new SQLiteConnection(CapacitorSQLite);
 
 let db: SQLiteDBConnection | null = null;
@@ -15,6 +13,7 @@ export type CustomerRecord = {
   id: number;
   name: string;
   phone: string;
+  company: string | null;
   stage: string;
   notes: string | null;
 };
@@ -29,11 +28,7 @@ export async function initializeDatabase(): Promise<SQLiteDBConnection> {
     db = await sqlite.retrieveConnection(DB_NAME, false);
   } else {
     db = await sqlite.createConnection(
-      DB_NAME,
-      false,
-      'no-encryption',
-      1,
-      false
+      DB_NAME, false, 'no-encryption', 1, false
     );
   }
 
@@ -58,11 +53,11 @@ export async function initializeDatabase(): Promise<SQLiteDBConnection> {
 export async function getCustomers(): Promise<CustomerRecord[]> {
   const database = await initializeDatabase();
 
-  const result = await database.query(
-    `SELECT id, name, phone, stage, notes
-     FROM customers
-     ORDER BY id DESC`
-  );
+  const result = await database.query(`
+    SELECT id, name, phone, company, stage, notes
+    FROM customers
+    ORDER BY id DESC
+  `);
 
   return (result.values || []) as CustomerRecord[];
 }
@@ -77,5 +72,38 @@ export async function addCustomer(
     `INSERT INTO customers (name, phone, stage)
      VALUES (?, ?, ?)`,
     [name.trim(), phone.trim(), 'مشتری جدید']
+  );
+}
+
+export async function updateCustomer(
+  id: number,
+  name: string,
+  phone: string,
+  company: string,
+  notes: string
+): Promise<void> {
+  const database = await initializeDatabase();
+
+  await database.run(
+    `UPDATE customers
+     SET name = ?, phone = ?, company = ?, notes = ?,
+     updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [
+      name.trim(),
+      phone.trim(),
+      company.trim() || null,
+      notes.trim() || null,
+      id
+    ]
+  );
+}
+
+export async function deleteCustomer(id: number): Promise<void> {
+  const database = await initializeDatabase();
+
+  await database.run(
+    `DELETE FROM customers WHERE id = ?`,
+    [id]
   );
 }
