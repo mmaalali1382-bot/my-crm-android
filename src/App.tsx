@@ -1,32 +1,34 @@
-
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Users, Package, ClipboardList, Wallet,
-  Plus, Search, Sparkles, Bell, ChevronLeft
+  Users, Package, ClipboardList, Wallet, Plus, Search, Sparkles,
+  Bell, ChevronLeft, Pencil, Trash2, X, Save, FileText, Building2
 } from 'lucide-react'
 import {
-  initializeDatabase,
-  getCustomers,
-  addCustomer as addCustomerToDb
+  initializeDatabase, getCustomers, addCustomer as addCustomerToDb,
+  updateCustomer, deleteCustomer
 } from './db/database'
 
 type Customer = {
   id: number
   name: string
   mobile: string
+  company: string
   stage: string
+  notes: string
 }
 
-const money = (n: number) =>
-  new Intl.NumberFormat('fa-IR').format(n)
+const money = (n: number) => new Intl.NumberFormat('fa-IR').format(n)
 
 export default function App() {
   const [tab, setTab] = useState('خانه')
   const [customers, setCustomers] = useState<Customer[]>([])
   const [query, setQuery] = useState('')
-  const [showAdd, setShowAdd] = useState(false)
+  const [showForm, setShowForm] = useState(false)
+  const [editing, setEditing] = useState<Customer | null>(null)
   const [name, setName] = useState('')
   const [mobile, setMobile] = useState('')
+  const [company, setCompany] = useState('')
+  const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -37,7 +39,9 @@ export default function App() {
       id: c.id,
       name: c.name,
       mobile: c.phone,
-      stage: c.stage
+      company: c.company || '',
+      stage: c.stage,
+      notes: c.notes || ''
     })))
   }
 
@@ -46,44 +50,83 @@ export default function App() {
       try {
         await initializeDatabase()
         await loadCustomers()
-        setError('')
       } catch (err) {
         console.error(err)
-        setError('اتصال به دیتابیس انجام نشد. لطفاً نسخه جدید برنامه را بررسی کن.')
+        setError('اتصال به دیتابیس انجام نشد.')
       } finally {
         setLoading(false)
       }
     }
-
     start()
   }, [])
 
-  const filtered = useMemo(
-    () => customers.filter(c =>
-      (c.name + c.mobile).includes(query)
-    ),
-    [customers, query]
-  )
+  const filtered = useMemo(() => customers.filter(c =>
+    (c.name + c.mobile + c.company).toLowerCase().includes(query.toLowerCase())
+  ), [customers, query])
 
-  async function addCustomer() {
+  function openNewForm() {
+    setEditing(null)
+    setName('')
+    setMobile('')
+    setCompany('')
+    setNotes('')
+    setShowForm(true)
+  }
+
+  function openEditForm(c: Customer) {
+    setEditing(c)
+    setName(c.name)
+    setMobile(c.mobile)
+    setCompany(c.company)
+    setNotes(c.notes)
+    setShowForm(true)
+  }
+
+  async function saveCustomer() {
     if (!name.trim() || !mobile.trim() || saving) return
 
     try {
       setSaving(true)
       setError('')
 
-      await addCustomerToDb(name, mobile)
-      await loadCustomers()
+      if (editing) {
+        await updateCustomer(editing.id, name, mobile, company, notes)
+      } else {
+        await addCustomerToDb(name, mobile)
+        const updated = await getCustomers()
+        const created = updated[0]
 
-      setName('')
-      setMobile('')
-      setShowAdd(false)
-      setTab('مشتریان')
+        if (created && (company.trim() || notes.trim())) {
+          await updateCustomer(
+            created.id, created.name, created.phone, company, notes
+          )
+        }
+      }
+
+      await loadCustomers()
+      setShowForm(false)
+      setEditing(null)
     } catch (err) {
       console.error(err)
-      setError('ثبت مشتری انجام نشد. دوباره تلاش کن.')
+      setError('ذخیره اطلاعات انجام نشد. دوباره تلاش کن.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function removeCustomer(c: Customer) {
+    const confirmed = window.confirm(
+      `مشتری «${c.name}» حذف شود؟ این کار قابل بازگشت نیست.`
+    )
+
+    if (!confirmed) return
+
+    try {
+      await deleteCustomer(c.id)
+      await loadCustomers()
+    } catch (err) {
+      console.error(err)
+      setError('حذف مشتری انجام نشد.')
     }
   }
 
@@ -99,9 +142,7 @@ export default function App() {
         </button>
       </header>
 
-      {error && (
-        <div className="empty" role="alert">{error}</div>
-      )}
+      {error && <div className="empty" role="alert">{error}</div>}
 
       {tab === 'خانه' && (
         <main>
@@ -125,34 +166,17 @@ export default function App() {
               <strong>{loading ? '...' : money(customers.length)}</strong>
               <small>مشتری ثبت‌شده</small>
             </article>
-            <article>
-              <ClipboardList/>
-              <strong>۰</strong>
-              <small>پیگیری باز</small>
-            </article>
-            <article>
-              <Wallet/>
-              <strong>۰</strong>
-              <small>فروش امروز (تومان)</small>
-            </article>
-            <article>
-              <Package/>
-              <strong>۰</strong>
-              <small>محصول</small>
-            </article>
+            <article><ClipboardList/><strong>۰</strong><small>پیگیری باز</small></article>
+            <article><Wallet/><strong>۰</strong><small>فروش امروز (تومان)</small></article>
+            <article><Package/><strong>۰</strong><small>محصول</small></article>
           </div>
 
           <section className="assistant">
             <div className="assistant-head">
-              <Sparkles/>
-              <b>دستیار CRM</b>
-              <span>نسخه اولیه</span>
+              <Sparkles/><b>دستیار CRM</b><span>نسخه اولیه</span>
             </div>
-            <p>
-              مشتری‌ها در دیتابیس برنامه ذخیره می‌شن.
-              قابلیت‌های صوتی و هوشمند در مراحل بعدی تکمیل می‌شن.
-            </p>
-            <button className="primary" onClick={() => setShowAdd(true)}>
+            <p>اطلاعات مشتری‌ها در دیتابیس برنامه ذخیره می‌شن.</p>
+            <button className="primary" onClick={openNewForm}>
               <Plus size={18}/> افزودن مشتری
             </button>
           </section>
@@ -176,10 +200,7 @@ export default function App() {
               <div className="eyebrow">ارتباط با مشتریان</div>
               <h2>مشتریان</h2>
             </div>
-            <button
-              className="primary compact"
-              onClick={() => setShowAdd(true)}
-            >
+            <button className="primary compact" onClick={openNewForm}>
               <Plus size={17}/> جدید
             </button>
           </div>
@@ -189,20 +210,33 @@ export default function App() {
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="جستجوی نام یا شماره موبایل"
+              placeholder="جستجوی نام، موبایل یا شرکت"
             />
           </label>
 
           {loading && <p className="empty">در حال دریافت مشتری‌ها...</p>}
 
           {!loading && filtered.map(c => (
-            <article className="customer" key={c.id}>
-              <div className="avatar">{c.name.slice(0, 1)}</div>
-              <div>
-                <b>{c.name}</b>
-                <small>{c.mobile}</small>
+            <article className="customer customer-expanded" key={c.id}>
+              <button className="customer-main" onClick={() => openEditForm(c)}>
+                <div className="avatar">{c.name.slice(0, 1)}</div>
+                <div className="customer-info">
+                  <b>{c.name}</b>
+                  <small>{c.mobile}</small>
+                  {c.company && <small><Building2 size={12}/> {c.company}</small>}
+                  {c.notes && <small className="note-preview"><FileText size={12}/> {c.notes}</small>}
+                </div>
+                <span>{c.stage}</span>
+              </button>
+
+              <div className="customer-actions">
+                <button onClick={() => openEditForm(c)}>
+                  <Pencil size={16}/> ویرایش
+                </button>
+                <button onClick={() => removeCustomer(c)}>
+                  <Trash2 size={16}/> حذف
+                </button>
               </div>
-              <span>{c.stage}</span>
             </article>
           ))}
 
@@ -237,12 +271,12 @@ export default function App() {
       )}
 
       <nav className="bottom-nav">
-        {[
+        {([
           ['خانه', Sparkles],
           ['مشتریان', Users],
           ['محصولات', Package],
           ['سفارش‌ها', ClipboardList]
-        ].map(([label, Icon]: any) => (
+        ] as const).map(([label, Icon]) => (
           <button
             key={label}
             className={tab === label ? 'active' : ''}
@@ -254,45 +288,39 @@ export default function App() {
         ))}
       </nav>
 
-      {showAdd && (
-        <div
-          className="modal-backdrop"
-          onClick={() => !saving && setShowAdd(false)}
-        >
-          <section
-            className="modal"
-            onClick={e => e.stopPropagation()}
-          >
+      {showForm && (
+        <div className="modal-backdrop" onClick={() => !saving && setShowForm(false)}>
+          <section className="modal customer-form" onClick={e => e.stopPropagation()}>
             <div className="modal-title">
-              <h3>مشتری جدید</h3>
-              <button onClick={() => !saving && setShowAdd(false)}>✕</button>
+              <h3>{editing ? 'ویرایش اطلاعات مشتری' : 'مشتری جدید'}</h3>
+              <button onClick={() => !saving && setShowForm(false)}>
+                <X/>
+              </button>
             </div>
 
             <label>
               نام و نام خانوادگی
-              <input
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="مثلاً علی رضایی"
-              />
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="مثلاً علی رضایی"/>
             </label>
 
             <label>
               شماره موبایل
-              <input
-                inputMode="tel"
-                value={mobile}
-                onChange={e => setMobile(e.target.value)}
-                placeholder="09xxxxxxxxx"
-              />
+              <input inputMode="tel" value={mobile} onChange={e => setMobile(e.target.value)} placeholder="09xxxxxxxxx"/>
             </label>
 
-            <button
-              className="primary full"
-              onClick={addCustomer}
-              disabled={!name.trim() || !mobile.trim() || saving}
-            >
-              {saving ? 'در حال ثبت...' : 'ثبت مشتری'}
+            <label>
+              نام شرکت (اختیاری)
+              <input value={company} onChange={e => setCompany(e.target.value)} placeholder="نام شرکت یا فروشگاه"/>
+            </label>
+
+            <label>
+              یادداشت مشتری (اختیاری)
+              <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="نیازها و نکات مشاوره..."/>
+            </label>
+
+            <button className="primary full" onClick={saveCustomer} disabled={!name.trim() || !mobile.trim() || saving}>
+              <Save size={17}/>
+              {saving ? 'در حال ذخیره...' : editing ? 'ذخیره تغییرات' : 'ثبت مشتری'}
             </button>
           </section>
         </div>
