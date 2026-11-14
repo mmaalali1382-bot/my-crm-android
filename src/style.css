@@ -384,3 +384,86 @@ main > h2 {
   width: 100%;
   margin-top: 10px;
 }
+.customer-expanded { display: block; }
+
+.customer-main {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: right;
+}
+
+.customer-info {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.customer-info small {
+  color: #8390a5;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.customer-info .note-preview {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 230px;
+}
+
+.customer-main > span {
+  font-size: 10px;
+  color: #536b9a;
+  background: #edf1f9;
+  padding: 5px 8px;
+  border-radius: 20px;
+}
+
+.customer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid #edf0f5;
+  margin-top: 10px;
+  padding-top: 8px;
+}
+
+.customer-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 9px;
+  background: #f1f4fa;
+  color: #34496f;
+  font-size: 11px;
+}
+
+.customer-actions button:last-child {
+  color: #a33c48;
+  background: #fff0f1;
+}
+
+.customer-form {
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.customer-form textarea {
+  font: inherit;
+  border: 1px solid #dce2ec;
+  border-radius: 10px;
+  padding: 12px;
+  resize: vertical;
+  outline-color: #526b9c;
+}
