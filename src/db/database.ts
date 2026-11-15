@@ -1,4 +1,3 @@
-
 import {
   CapacitorSQLite,
   SQLiteConnection,
@@ -68,6 +67,24 @@ export type CustomerBalanceRecord = {
   totalOrders: number;
   totalPaid: number;
   balance: number;
+};
+
+export type AccountRecord = {
+  id: number;
+  name: string;
+  type: string;
+  openingBalance: number;
+  notes: string | null;
+};
+
+export type ExpenseRecord = {
+  id: number;
+  accountId: number | null;
+  title: string;
+  category: string;
+  amount: number;
+  expenseDate: string;
+  notes: string | null;
 };
 
 export async function initializeDatabase(): Promise<SQLiteDBConnection> {
@@ -146,6 +163,27 @@ export async function initializeDatabase(): Promise<SQLiteDBConnection> {
       notes TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(customer_id) REFERENCES customers(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'نقدی',
+      opening_balance REAL NOT NULL DEFAULT 0,
+      notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS expenses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'سایر',
+      amount REAL NOT NULL,
+      expense_date TEXT NOT NULL DEFAULT CURRENT_DATE,
+      notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(account_id) REFERENCES accounts(id)
     );
   `);
 
@@ -643,4 +681,177 @@ export async function addPayment(
 
     throw error;
   }
+}
+
+// ================================
+// مدیریت حساب‌ها
+// ================================
+
+export async function getAccounts(): Promise<AccountRecord[]> {
+  const d = await initializeDatabase();
+
+  const result = await d.query(`
+    SELECT
+      id,
+      name,
+      type,
+      opening_balance AS openingBalance,
+      notes
+    FROM accounts
+    ORDER BY id DESC
+  `);
+
+  return (result.values || []) as AccountRecord[];
+}
+
+export async function addAccount(
+  name: string,
+  type: string,
+  openingBalance: number,
+  notes: string
+): Promise<void> {
+  const d = await initializeDatabase();
+
+  if (!name.trim()) {
+    throw new Error('نام حساب را وارد کنید.');
+  }
+
+  if (!Number.isFinite(openingBalance)) {
+    throw new Error('موجودی اولیه معتبر نیست.');
+  }
+
+  await d.run(
+    `INSERT INTO accounts
+     (name,type,opening_balance,notes)
+     VALUES(?,?,?,?)`,
+    [
+      name.trim(),
+      type.trim() || 'نقدی',
+      openingBalance,
+      notes.trim() || null
+    ]
+  );
+}
+
+export async function updateAccount(
+  id: number,
+  name: string,
+  type: string,
+  openingBalance: number,
+  notes: string
+): Promise<void> {
+  const d = await initializeDatabase();
+
+  if (!name.trim()) {
+    throw new Error('نام حساب را وارد کنید.');
+  }
+
+  if (!Number.isFinite(openingBalance)) {
+    throw new Error('موجودی اولیه معتبر نیست.');
+  }
+
+  await d.run(
+    `UPDATE accounts
+     SET name=?,type=?,opening_balance=?,notes=?
+     WHERE id=?`,
+    [
+      name.trim(),
+      type.trim() || 'نقدی',
+      openingBalance,
+      notes.trim() || null,
+      id
+    ]
+  );
+}
+
+export async function deleteAccount(id: number): Promise<void> {
+  const d = await initializeDatabase();
+
+  const expenses = await d.query(
+    'SELECT id FROM expenses WHERE account_id=? LIMIT 1',
+    [id]
+  );
+
+  if (expenses.values?.length) {
+    throw new Error('این حساب دارای هزینه ثبت‌شده است و فعلاً قابل حذف نیست.');
+  }
+
+  await d.run('DELETE FROM accounts WHERE id=?', [id]);
+}
+
+// ================================
+// مدیریت هزینه‌ها
+// ================================
+
+export async function getExpenses(): Promise<ExpenseRecord[]> {
+  const d = await initializeDatabase();
+
+  const result = await d.query(`
+    SELECT
+      id,
+      account_id AS accountId,
+      title,
+      category,
+      amount,
+      expense_date AS expenseDate,
+      notes
+    FROM expenses
+    ORDER BY expense_date DESC, id DESC
+  `);
+
+  return (result.values || []) as ExpenseRecord[];
+}
+
+export async function addExpense(
+  accountId: number | null,
+  title: string,
+  category: string,
+  amount: number,
+  expenseDate: string,
+  notes: string
+): Promise<void> {
+  const d = await initializeDatabase();
+
+  if (!title.trim()) {
+    throw new Error('عنوان هزینه را وارد کنید.');
+  }
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error('مبلغ هزینه باید بیشتر از صفر باشد.');
+  }
+
+  if (accountId !== null) {
+    if (!Number.isInteger(accountId) || accountId <= 0) {
+      throw new Error('حساب انتخاب‌شده معتبر نیست.');
+    }
+
+    const account = await d.query(
+      'SELECT id FROM accounts WHERE id=?',
+      [accountId]
+    );
+
+    if (!account.values?.length) {
+      throw new Error('حساب انتخاب‌شده پیدا نشد.');
+    }
+  }
+
+  await d.run(
+    `INSERT INTO expenses
+     (account_id,title,category,amount,expense_date,notes)
+     VALUES(?,?,?,?,?,?)`,
+    [
+      accountId,
+      title.trim(),
+      category.trim() || 'سایر',
+      amount,
+      expenseDate.trim() || new Date().toISOString().slice(0, 10),
+      notes.trim() || null
+    ]
+  );
+}
+
+export async function deleteExpense(id: number): Promise<void> {
+  const d = await initializeDatabase();
+
+  await d.run('DELETE FROM expenses WHERE id=?', [id]);
 }
