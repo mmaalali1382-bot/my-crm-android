@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Users, Package, ClipboardList, Wallet, Plus, Search, Sparkles,
   Bell, ChevronLeft, Pencil, Trash2, X, Save, FileText, Building2,
-  AlertTriangle, Boxes, ShoppingCart, Minus, CheckCircle
+  AlertTriangle, Boxes, ShoppingCart, Minus, CheckCircle, ShieldCheck
 } from 'lucide-react'
 import {
   initializeDatabase, getCustomers, addCustomer as addCustomerToDb,
@@ -11,6 +11,7 @@ import {
   type OrderRecord
 } from './db/database'
 import Payments from './Payments'
+import Backup from './Backup'
 
 type Customer = {
   id: number
@@ -701,13 +702,16 @@ export default function App() {
 
       {tab === 'پرداخت‌ها' && <Payments />}
 
+      {tab === 'پشتیبان‌گیری' && <Backup />}
+
       <nav className="bottom-nav">
         {([
           ['خانه', Sparkles],
           ['مشتریان', Users],
           ['محصولات', Package],
           ['سفارش‌ها', ClipboardList],
-          ['پرداخت‌ها', Wallet]
+          ['پرداخت‌ها', Wallet],
+          ['پشتیبان‌گیری', ShieldCheck]
         ] as const).map(([label, Icon]) => (
           <button
             key={label}
