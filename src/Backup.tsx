@@ -1,6 +1,8 @@
 
 import { useRef, useState } from 'react'
 import { Download, Upload, ShieldCheck, FileText } from 'lucide-react'
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
+import { Share } from '@capacitor/share'
 import {
   exportDatabaseBackup,
   restoreDatabaseBackup
@@ -19,23 +21,28 @@ export default function Backup() {
       setError('')
 
       const data = await exportDatabaseBackup()
-      const blob = new Blob([data], {
-        type: 'application/json;charset=utf-8'
+      const fileName = `CRM-Backup-${new Date().toISOString().slice(0, 10)}.json`
+
+      const savedFile = await Filesystem.writeFile({
+        path: fileName,
+        data,
+        directory: Directory.Cache,
+        encoding: Encoding.UTF8
       })
 
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `CRM-Backup-${new Date().toISOString().slice(0, 10)}.json`
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(url)
+      await Share.share({
+        title: 'نسخه پشتیبان CRM',
+        text: 'فایل پشتیبان اطلاعات CRM',
+        url: savedFile.uri,
+        dialogTitle: 'ذخیره فایل پشتیبان'
+      })
 
-      setMessage('فایل پشتیبان آماده دانلود شد.')
+      setMessage(
+        'فایل پشتیبان آماده است. در پنجره بازشده گزینه Files یا ذخیره در دستگاه را انتخاب کن.'
+      )
     } catch (e) {
       console.error(e)
-      setError('تهیه نسخه پشتیبان انجام نشد.')
+      setError('تهیه یا اشتراک‌گذاری فایل پشتیبان انجام نشد. دوباره تلاش کن.')
     } finally {
       setLoading(false)
     }
@@ -61,10 +68,14 @@ export default function Backup() {
       const content = await file.text()
       await restoreDatabaseBackup(content)
 
-      setMessage('بازیابی اطلاعات با موفقیت انجام شد. برنامه را یک بار ببند و دوباره باز کن.')
+      setMessage(
+        'بازیابی اطلاعات با موفقیت انجام شد. برنامه را یک بار ببند و دوباره باز کن.'
+      )
     } catch (e) {
       console.error(e)
-      setError('بازیابی انجام نشد. فایل پشتیبان معتبر نیست یا مشکلی در دیتابیس وجود دارد.')
+      setError(
+        'بازیابی انجام نشد. فایل پشتیبان معتبر نیست یا مشکلی در دیتابیس وجود دارد.'
+      )
     } finally {
       setLoading(false)
       if (fileRef.current) fileRef.current.value = ''
@@ -94,7 +105,7 @@ export default function Backup() {
         <ShieldCheck size={30} color="#244b85" />
         <h3 style={{ color: '#172b4d' }}>تهیه نسخه پشتیبان</h3>
         <p style={{ color: '#52627a', lineHeight: 1.8 }}>
-          یک فایل از اطلاعات دیتابیس تهیه و در گوشی ذخیره کن.
+          فایل پشتیبان ساخته می‌شود و پنجره ذخیره یا اشتراک‌گذاری اندروید باز می‌شود.
         </p>
         <button
           onClick={createBackup}
@@ -167,5 +178,4 @@ export default function Backup() {
       </p>
     </main>
   )
-          }
-          
+}
