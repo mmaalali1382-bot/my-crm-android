@@ -46,7 +46,51 @@ jobs:
       - name: Sync Android project
         run: npx cap sync android
 
+      - name: Restore permanent signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/crm-release-key.jks
+          test -s android/app/crm-release-key.jks
+
+      - name: Configure permanent signing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("android/app/build.gradle")
+          s = p.read_text()
+
+          signing = """
+              signingConfigs {
+                  release {
+                      storeFile file("crm-release-key.jks")
+                      storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                      keyAlias "crmkey"
+                      keyPassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                  }
+              }
+          """
+
+          if "signingConfigs {" not in s:
+              s = s.replace("android {", "android {" + signing, 1)
+
+          debug = """
+                  debug {
+                      signingConfig signingConfigs.release
+                  }
+          """
+
+          if "signingConfig signingConfigs.release" not in s:
+              s = s.replace("buildTypes {", "buildTypes {" + debug, 1)
+
+          p.write_text(s)
+          PY
+
       - name: Build APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           cd android
           chmod +x gradlew
