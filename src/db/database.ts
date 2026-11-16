@@ -855,3 +855,44 @@ export async function deleteExpense(id: number): Promise<void> {
 
   await d.run('DELETE FROM expenses WHERE id=?', [id]);
 }
+// ================================
+// پشتیبان‌گیری و بازیابی دیتابیس
+// ================================
+
+export async function exportDatabaseBackup(): Promise<string> {
+  const d = await initializeDatabase();
+  const result = await d.exportToJson('full');
+
+  if (!result.export) {
+    throw new Error('تهیه نسخه پشتیبان ناموفق بود.');
+  }
+
+  return JSON.stringify(result.export);
+}
+
+export async function restoreDatabaseBackup(
+  jsonString: string
+): Promise<void> {
+  let backup: any;
+
+  try {
+    backup = JSON.parse(jsonString);
+  } catch {
+    throw new Error('فایل پشتیبان معتبر نیست.');
+  }
+
+  const validation = await sqlite.isJsonValid(jsonString);
+
+  if (!validation.result) {
+    throw new Error('ساختار فایل پشتیبان معتبر نیست.');
+  }
+
+  backup.overwrite = true;
+
+  await sqlite.closeConnection(DB_NAME, false);
+  db = null;
+
+  await sqlite.importFromJson(JSON.stringify(backup));
+
+  await initializeDatabase();
+}
