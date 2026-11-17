@@ -1,8 +1,10 @@
+
 import { useEffect, useMemo, useState } from 'react'
 import {
   Users, Package, ClipboardList, Wallet, Plus, Search, Sparkles,
   Bell, ChevronLeft, Pencil, Trash2, X, Save, FileText, Building2,
-  AlertTriangle, Boxes, ShoppingCart, Minus, CheckCircle, ShieldCheck
+  AlertTriangle, Boxes, ShoppingCart, Minus, CheckCircle, ShieldCheck,
+  CalendarDays
 } from 'lucide-react'
 import {
   initializeDatabase, getCustomers, addCustomer as addCustomerToDb,
@@ -12,6 +14,7 @@ import {
 } from './db/database'
 import Payments from './Payments'
 import Backup from './Backup'
+import FollowUps from './FollowUps'
 
 type Customer = {
   id: number
@@ -489,6 +492,9 @@ export default function App() {
             <button onClick={() => setTab('سفارش‌ها')}>
               <ClipboardList/> سفارش‌ها <ChevronLeft/>
             </button>
+            <button onClick={() => setTab('پیگیری‌ها')}>
+              <CalendarDays/> پیگیری مشتریان <ChevronLeft/>
+            </button>
           </section>
         </main>
       )}
@@ -700,6 +706,8 @@ export default function App() {
         </main>
       )}
 
+      {tab === 'پیگیری‌ها' && <FollowUps />}
+
       {tab === 'پرداخت‌ها' && <Payments />}
 
       {tab === 'پشتیبان‌گیری' && <Backup />}
@@ -710,6 +718,7 @@ export default function App() {
           ['مشتریان', Users],
           ['محصولات', Package],
           ['سفارش‌ها', ClipboardList],
+          ['پیگیری‌ها', CalendarDays],
           ['پرداخت‌ها', Wallet],
           ['پشتیبان‌گیری', ShieldCheck]
         ] as const).map(([label, Icon]) => (
