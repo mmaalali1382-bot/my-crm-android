@@ -11,11 +11,33 @@ import {
   updateProduct, deleteProduct, getOrders, addOrder, updateOrderStatus,
   type OrderRecord
 } from './db/database'
-import { ensureCustomerDetailsSchema } from './db/customerDetails'
+import {
+  ensureCustomerDetailsSchema,
+  getCustomerDetails,
+  saveCustomerDetails,
+  type CustomerDetails
+} from './db/customerDetails'
+import CustomerDetailsForm from './CustomerDetailsForm'
 import Payments from './Payments'
 import Backup from './Backup'
 import FollowUps from './FollowUps'
 import NavigationDrawer from './NavigationDrawer'
+
+const emptyCustomerDetails: CustomerDetails = {
+  alternatePhone: '',
+  city: '',
+  job: '',
+  customerType: 'عادی',
+  leadSource: '',
+  preferredContact: '',
+  interests: '',
+  productsWanted: '',
+  budget: 0,
+  lastContact: '',
+  negotiationResult: '',
+  priority: 'متوسط',
+  followUpDate: ''
+}
 
 type Customer = {
   id: number
@@ -71,6 +93,9 @@ export default function App() {
   const [mobile, setMobile] = useState('')
   const [company, setCompany] = useState('')
   const [notes, setNotes] = useState('')
+  const [customerDetails, setCustomerDetails] =
+    useState<CustomerDetails>({ ...emptyCustomerDetails })
+  const [detailsLoading, setDetailsLoading] = useState(false)
 
   const [showProductForm, setShowProductForm] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
@@ -159,34 +184,68 @@ export default function App() {
     setMobile('')
     setCompany('')
     setNotes('')
+    setCustomerDetails({ ...emptyCustomerDetails })
+    setDetailsLoading(false)
     setShowForm(true)
   }
 
-  function openEditForm(c: Customer) {
+  async function openEditForm(c: Customer) {
     setEditing(c)
     setName(c.name)
     setMobile(c.mobile)
     setCompany(c.company)
     setNotes(c.notes)
+    setCustomerDetails({ ...emptyCustomerDetails })
+    setDetailsLoading(true)
     setShowForm(true)
+
+    try {
+      const details = await getCustomerDetails(c.id)
+      if (details) setCustomerDetails(details)
+    } catch (err) {
+      console.error(err)
+      setError('دریافت اطلاعات تکمیلی مشتری انجام نشد.')
+    } finally {
+      setDetailsLoading(false)
+    }
   }
 
   async function saveCustomer() {
-    if (!name.trim() || !mobile.trim() || saving) return
+    if (!name.trim() || !mobile.trim() || saving || detailsLoading) return
+
     try {
       setSaving(true)
       setError('')
+
+      let customerId: number
+
       if (editing) {
-        await updateCustomer(editing.id, name, mobile, company, notes)
+        customerId = editing.id
+        await updateCustomer(customerId, name, mobile, company, notes)
       } else {
         await addCustomerToDb(name, mobile)
+
         const updated = await getCustomers()
         const created = updated[0]
-        if (created && (company.trim() || notes.trim())) {
-          await updateCustomer(created.id, created.name, created.phone, company, notes)
+
+        if (!created) {
+          throw new Error('مشتری جدید در دیتابیس پیدا نشد.')
         }
+
+        customerId = created.id
+
+        await updateCustomer(
+          customerId,
+          created.name,
+          created.phone,
+          company,
+          notes
+        )
       }
+
+      await saveCustomerDetails(customerId, customerDetails)
       await loadCustomers()
+
       setShowForm(false)
       setEditing(null)
     } catch (err) {
@@ -199,6 +258,7 @@ export default function App() {
 
   async function removeCustomer(c: Customer) {
     if (!window.confirm(`مشتری «${c.name}» حذف شود؟`)) return
+
     try {
       await deleteCustomer(c.id)
       await loadCustomers()
@@ -240,9 +300,11 @@ export default function App() {
     const stock = Number(productStock)
     const minStock = Number(productMinStock)
 
-    if (![cost, price, stock, minStock].every(Number.isFinite) ||
-        cost < 0 || price < 0 || stock < 0 || minStock < 0 ||
-        !Number.isInteger(stock) || !Number.isInteger(minStock)) {
+    if (
+      ![cost, price, stock, minStock].every(Number.isFinite) ||
+      cost < 0 || price < 0 || stock < 0 || minStock < 0 ||
+      !Number.isInteger(stock) || !Number.isInteger(minStock)
+    ) {
       setError('مقادیر عددی محصول معتبر نیستند.')
       return
     }
@@ -250,17 +312,30 @@ export default function App() {
     try {
       setSaving(true)
       setError('')
+
       if (editingProduct) {
         await updateProduct(
-          editingProduct.id, productName, productCode, productCategory,
-          cost, price, stock, minStock
+          editingProduct.id,
+          productName,
+          productCode,
+          productCategory,
+          cost,
+          price,
+          stock,
+          minStock
         )
       } else {
         await addProduct(
-          productName, productCode, productCategory,
-          cost, price, stock, minStock
+          productName,
+          productCode,
+          productCategory,
+          cost,
+          price,
+          stock,
+          minStock
         )
       }
+
       await loadProducts()
       setShowProductForm(false)
       setEditingProduct(null)
@@ -274,6 +349,7 @@ export default function App() {
 
   async function removeProduct(p: Product) {
     if (!window.confirm(`محصول «${p.name}» حذف شود؟`)) return
+
     try {
       await deleteProduct(p.id)
       await loadProducts()
@@ -297,6 +373,7 @@ export default function App() {
     setCart(current => {
       const existing = current.find(x => x.productId === productId)
       const product = products.find(x => x.id === productId)
+
       if (!product) return current
 
       const oldQuantity = existing?.quantity || 0
@@ -344,6 +421,7 @@ export default function App() {
     }
 
     const customer = selectedCustomer
+
     const summary = cart.map(item => {
       const p = products.find(x => x.id === item.productId)
       return p ? `${p.name} × ${money(item.quantity)}` : ''
@@ -364,12 +442,14 @@ export default function App() {
     try {
       setSaving(true)
       setError('')
+
       await addOrder(
         Number(orderCustomer),
         cart,
         discountValue,
         orderNotes
       )
+
       await refreshAll()
       setShowOrderForm(false)
       setCart([])
@@ -391,6 +471,7 @@ export default function App() {
         `وضعیت سفارش شماره ${money(order.id)} لغو شود؟\n` +
         `توجه: موجودی انبار به‌صورت خودکار برگردانده نمی‌شود.`
       )
+
       if (!ok) return
     }
 
@@ -410,20 +491,22 @@ export default function App() {
           activeTab={tab}
           onNavigate={setTab}
         />
-        <div style={{flex: 1}}>
+
+        <div style={{ flex: 1 }}>
           <div className="eyebrow">مدیریت هوشمند ارتباط با مشتری</div>
           <h1>CRM شخصی</h1>
         </div>
+
         <button className="icon-btn" aria-label="اعلان‌ها">
-          <Bell size={21}/>
+          <Bell size={21} />
         </button>
       </header>
 
       {error && (
-        <div className="empty" role="alert" style={{color:'#a33c48'}}>
+        <div className="empty" role="alert" style={{ color: '#a33c48' }}>
           {error}
-          <button onClick={() => setError('')} style={{marginRight:10}}>
-            <X size={16}/>
+          <button onClick={() => setError('')} style={{ marginRight: 10 }}>
+            <X size={16} />
           </button>
         </div>
       )}
@@ -431,7 +514,7 @@ export default function App() {
       {tab === 'خانه' && (
         <main>
           <section className="welcome">
-            <div className="welcome-icon"><Sparkles/></div>
+            <div className="welcome-icon"><Sparkles /></div>
             <div>
               <div className="eyebrow light">داشبورد شما</div>
               <h2>سلام، خوش اومدی!</h2>
@@ -446,60 +529,62 @@ export default function App() {
 
           <div className="stats">
             <article>
-              <Users/>
+              <Users />
               <strong>{loading ? '...' : money(customers.length)}</strong>
               <small>مشتری ثبت‌شده</small>
             </article>
             <article>
-              <ClipboardList/>
+              <ClipboardList />
               <strong>{loading ? '...' : money(orders.length)}</strong>
               <small>تعداد سفارش‌ها</small>
             </article>
             <article>
-              <Wallet/>
-              <strong>{money(orders.filter(o => o.status !== 'لغو شده').reduce((s,o) => s + o.finalTotal, 0))}</strong>
+              <Wallet />
+              <strong>
+                {money(orders.filter(o => o.status !== 'لغو شده').reduce((s, o) => s + o.finalTotal, 0))}
+              </strong>
               <small>مجموع سفارش‌ها (تومان)</small>
             </article>
             <article>
-              <Package/>
+              <Package />
               <strong>{loading ? '...' : money(products.length)}</strong>
               <small>محصول ثبت‌شده</small>
             </article>
           </div>
 
           {lowStockCount > 0 && (
-            <div className="empty" style={{color:'#a36b20'}}>
-              <AlertTriangle size={17}/>
+            <div className="empty" style={{ color: '#a36b20' }}>
+              <AlertTriangle size={17} />
               {money(lowStockCount)} محصول نیاز به بررسی موجودی دارد.
             </div>
           )}
 
           <section className="assistant">
             <div className="assistant-head">
-              <Sparkles/><b>دستیار CRM</b><span>نسخه اولیه</span>
+              <Sparkles /><b>دستیار CRM</b><span>نسخه اولیه</span>
             </div>
             <p>مشتری‌ها، محصولات و سفارش‌ها در دیتابیس برنامه ذخیره می‌شوند.</p>
             <button className="primary" onClick={openNewForm}>
-              <Plus size={18}/> افزودن مشتری
+              <Plus size={18} /> افزودن مشتری
             </button>
-            <button className="primary" style={{marginRight:8}} onClick={openNewOrderForm}>
-              <ShoppingCart size={18}/> ثبت سفارش
+            <button className="primary" style={{ marginRight: 8 }} onClick={openNewOrderForm}>
+              <ShoppingCart size={18} /> ثبت سفارش
             </button>
           </section>
 
           <section className="quick">
             <h3>دسترسی سریع</h3>
             <button onClick={() => setTab('مشتریان')}>
-              <Users/> مشتریان <ChevronLeft/>
+              <Users /> مشتریان <ChevronLeft />
             </button>
             <button onClick={() => setTab('محصولات')}>
-              <Package/> محصولات و انبار <ChevronLeft/>
+              <Package /> محصولات و انبار <ChevronLeft />
             </button>
             <button onClick={() => setTab('سفارش‌ها')}>
-              <ClipboardList/> سفارش‌ها <ChevronLeft/>
+              <ClipboardList /> سفارش‌ها <ChevronLeft />
             </button>
             <button onClick={() => setTab('پیگیری‌ها')}>
-              <CalendarDays/> پیگیری مشتریان <ChevronLeft/>
+              <CalendarDays /> پیگیری مشتریان <ChevronLeft />
             </button>
           </section>
         </main>
@@ -513,12 +598,12 @@ export default function App() {
               <h2>مشتریان</h2>
             </div>
             <button className="primary compact" onClick={openNewForm}>
-              <Plus size={17}/> جدید
+              <Plus size={17} /> جدید
             </button>
           </div>
 
           <label className="search">
-            <Search size={18}/>
+            <Search size={18} />
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
@@ -535,17 +620,17 @@ export default function App() {
                 <div className="customer-info">
                   <b>{c.name}</b>
                   <small>{c.mobile}</small>
-                  {c.company && <small><Building2 size={12}/> {c.company}</small>}
-                  {c.notes && <small className="note-preview"><FileText size={12}/> {c.notes}</small>}
+                  {c.company && <small><Building2 size={12} /> {c.company}</small>}
+                  {c.notes && <small className="note-preview"><FileText size={12} /> {c.notes}</small>}
                 </div>
                 <span>{c.stage}</span>
               </button>
               <div className="customer-actions">
                 <button onClick={() => openEditForm(c)}>
-                  <Pencil size={16}/> ویرایش
+                  <Pencil size={16} /> ویرایش
                 </button>
                 <button onClick={() => removeCustomer(c)}>
-                  <Trash2 size={16}/> حذف
+                  <Trash2 size={16} /> حذف
                 </button>
               </div>
             </article>
@@ -565,25 +650,25 @@ export default function App() {
               <h2>محصولات</h2>
             </div>
             <button className="primary compact" onClick={openNewProductForm}>
-              <Plus size={17}/> محصول جدید
+              <Plus size={17} /> محصول جدید
             </button>
           </div>
 
           <div className="stats">
             <article>
-              <Boxes/>
+              <Boxes />
               <strong>{money(products.length)}</strong>
               <small>تعداد محصولات</small>
             </article>
             <article>
-              <AlertTriangle/>
+              <AlertTriangle />
               <strong>{money(lowStockCount)}</strong>
               <small>موجودی کم</small>
             </article>
           </div>
 
           <label className="search">
-            <Search size={18}/>
+            <Search size={18} />
             <input
               value={productQuery}
               onChange={e => setProductQuery(e.target.value)}
@@ -595,10 +680,11 @@ export default function App() {
 
           {!loading && filteredProducts.map(p => {
             const low = p.stock <= p.minStock
+
             return (
               <article className="customer customer-expanded" key={p.id}>
                 <div className="customer-main">
-                  <div className="avatar"><Package size={19}/></div>
+                  <div className="avatar"><Package size={19} /></div>
                   <div className="customer-info">
                     <b>{p.name}</b>
                     {p.code && <small>کد: {p.code}</small>}
@@ -606,20 +692,20 @@ export default function App() {
                     <small>قیمت فروش: {money(p.price)} تومان</small>
                     <small>قیمت خرید: {money(p.cost)} تومان</small>
                   </div>
-                  <span style={low ? {color:'#a33c48',background:'#fff0f1'} : {}}>
+                  <span style={low ? { color: '#a33c48', background: '#fff0f1' } : {}}>
                     {low ? 'موجودی کم' : 'موجود'}
                   </span>
                 </div>
-                <div className="customer-actions" style={{justifyContent:'space-between'}}>
-                  <small style={{color:low ? '#a33c48' : '#536b9a'}}>
+                <div className="customer-actions" style={{ justifyContent: 'space-between' }}>
+                  <small style={{ color: low ? '#a33c48' : '#536b9a' }}>
                     موجودی: {money(p.stock)} عدد | حداقل: {money(p.minStock)}
                   </small>
-                  <div style={{display:'flex',gap:8}}>
+                  <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={() => openEditProductForm(p)}>
-                      <Pencil size={16}/> ویرایش
+                      <Pencil size={16} /> ویرایش
                     </button>
                     <button onClick={() => removeProduct(p)}>
-                      <Trash2 size={16}/> حذف
+                      <Trash2 size={16} /> حذف
                     </button>
                   </div>
                 </div>
@@ -629,7 +715,7 @@ export default function App() {
 
           {!loading && !filteredProducts.length && (
             <div className="empty-card">
-              <Package/>
+              <Package />
               <b>محصولی پیدا نشد</b>
               <p>برای شروع، محصول جدید ثبت کن.</p>
             </div>
@@ -645,19 +731,21 @@ export default function App() {
               <h2>سفارش‌ها</h2>
             </div>
             <button className="primary compact" onClick={openNewOrderForm}>
-              <Plus size={17}/> سفارش جدید
+              <Plus size={17} /> سفارش جدید
             </button>
           </div>
 
           <div className="stats">
             <article>
-              <ClipboardList/>
+              <ClipboardList />
               <strong>{money(orders.length)}</strong>
               <small>کل سفارش‌ها</small>
             </article>
             <article>
-              <Wallet/>
-              <strong>{money(orders.filter(o => o.status !== 'لغو شده').reduce((s,o) => s + o.finalTotal, 0))}</strong>
+              <Wallet />
+              <strong>
+                {money(orders.filter(o => o.status !== 'لغو شده').reduce((s, o) => s + o.finalTotal, 0))}
+              </strong>
               <small>مجموع فروش (تومان)</small>
             </article>
           </div>
@@ -667,15 +755,15 @@ export default function App() {
           {!loading && orders.map(order => (
             <article className="customer customer-expanded" key={order.id}>
               <div className="customer-main">
-                <div className="avatar"><ShoppingCart size={19}/></div>
+                <div className="avatar"><ShoppingCart size={19} /></div>
                 <div className="customer-info">
                   <b>سفارش شماره {money(order.id)}</b>
                   <small>مشتری: {order.customerName}</small>
                   <small>تاریخ ثبت: {order.createdAt}</small>
-                  <small>تعداد اقلام: {money(order.items.reduce((s,i) => s + i.quantity, 0))}</small>
+                  <small>تعداد اقلام: {money(order.items.reduce((s, i) => s + i.quantity, 0))}</small>
                   <small>مبلغ کل: {money(order.total)} تومان</small>
                   <small>تخفیف: {money(order.discount)} تومان</small>
-                  <b style={{color:'#315da8'}}>مبلغ نهایی: {money(order.finalTotal)} تومان</b>
+                  <b style={{ color: '#315da8' }}>مبلغ نهایی: {money(order.finalTotal)} تومان</b>
                   {order.items.map(item => (
                     <small key={item.id}>
                       {item.productName} × {money(item.quantity)}
@@ -684,13 +772,13 @@ export default function App() {
                   {order.notes && <small>یادداشت: {order.notes}</small>}
                 </div>
               </div>
-              <div className="customer-actions" style={{flexWrap:'wrap'}}>
-                <label style={{display:'flex',alignItems:'center',gap:8}}>
+              <div className="customer-actions" style={{ flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   وضعیت سفارش:
                   <select
                     value={order.status}
                     onChange={e => changeStatus(order, e.target.value)}
-                    style={{padding:8,borderRadius:8,border:'1px solid #ccc',maxWidth:170}}
+                    style={{ padding: 8, borderRadius: 8, border: '1px solid #ccc', maxWidth: 170 }}
                   >
                     {statuses.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
@@ -701,11 +789,11 @@ export default function App() {
 
           {!loading && !orders.length && (
             <div className="empty-card">
-              <ClipboardList/>
+              <ClipboardList />
               <b>هنوز سفارشی ثبت نشده</b>
               <p>برای شروع، سفارش جدید ثبت کن.</p>
               <button className="primary" onClick={openNewOrderForm}>
-                <Plus size={17}/> ثبت اولین سفارش
+                <Plus size={17} /> ثبت اولین سفارش
               </button>
             </div>
           )}
@@ -723,27 +811,68 @@ export default function App() {
           <section className="modal customer-form" onClick={e => e.stopPropagation()}>
             <div className="modal-title">
               <h3>{editing ? 'ویرایش اطلاعات مشتری' : 'مشتری جدید'}</h3>
-              <button onClick={() => !saving && setShowForm(false)}><X/></button>
+              <button onClick={() => !saving && setShowForm(false)}><X /></button>
             </div>
+
             <label>
               نام و نام خانوادگی
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="مثلاً علی رضایی"/>
+              <input
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="مثلاً علی رضایی"
+              />
             </label>
+
             <label>
               شماره موبایل
-              <input inputMode="tel" value={mobile} onChange={e => setMobile(e.target.value)} placeholder="09xxxxxxxxx"/>
+              <input
+                inputMode="tel"
+                value={mobile}
+                onChange={e => setMobile(e.target.value)}
+                placeholder="09xxxxxxxxx"
+              />
             </label>
+
             <label>
               نام شرکت (اختیاری)
-              <input value={company} onChange={e => setCompany(e.target.value)} placeholder="نام شرکت یا فروشگاه"/>
+              <input
+                value={company}
+                onChange={e => setCompany(e.target.value)}
+                placeholder="نام شرکت یا فروشگاه"
+              />
             </label>
+
             <label>
               یادداشت مشتری (اختیاری)
-              <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="نیازها و نکات مشاوره..."/>
+              <textarea
+                rows={3}
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                placeholder="نیازها و نکات مشاوره..."
+              />
             </label>
-            <button className="primary full" onClick={saveCustomer} disabled={!name.trim() || !mobile.trim() || saving}>
-              <Save size={17}/>
-              {saving ? 'در حال ذخیره...' : editing ? 'ذخیره تغییرات' : 'ثبت مشتری'}
+
+            {detailsLoading && (
+              <p className="empty">در حال دریافت اطلاعات تکمیلی مشتری...</p>
+            )}
+
+            <CustomerDetailsForm
+              value={customerDetails}
+              onChange={setCustomerDetails}
+              disabled={saving || detailsLoading}
+            />
+
+            <button
+              className="primary full"
+              onClick={saveCustomer}
+              disabled={!name.trim() || !mobile.trim() || saving || detailsLoading}
+            >
+              <Save size={17} />
+              {saving
+                ? 'در حال ذخیره...'
+                : editing
+                  ? 'ذخیره تغییرات'
+                  : 'ثبت مشتری'}
             </button>
           </section>
         </div>
@@ -754,38 +883,88 @@ export default function App() {
           <section className="modal customer-form" onClick={e => e.stopPropagation()}>
             <div className="modal-title">
               <h3>{editingProduct ? 'ویرایش محصول' : 'ثبت محصول جدید'}</h3>
-              <button onClick={() => !saving && setShowProductForm(false)}><X/></button>
+              <button onClick={() => !saving && setShowProductForm(false)}><X /></button>
             </div>
+
             <label>
               نام محصول
-              <input value={productName} onChange={e => setProductName(e.target.value)} placeholder="مثلاً روغن رزماری"/>
+              <input
+                value={productName}
+                onChange={e => setProductName(e.target.value)}
+                placeholder="مثلاً روغن رزماری"
+              />
             </label>
+
             <label>
               کد محصول (اختیاری)
-              <input value={productCode} onChange={e => setProductCode(e.target.value)} placeholder="کد کالا"/>
+              <input
+                value={productCode}
+                onChange={e => setProductCode(e.target.value)}
+                placeholder="کد کالا"
+              />
             </label>
+
             <label>
               دسته‌بندی (اختیاری)
-              <input value={productCategory} onChange={e => setProductCategory(e.target.value)} placeholder="مثلاً مراقبت مو"/>
+              <input
+                value={productCategory}
+                onChange={e => setProductCategory(e.target.value)}
+                placeholder="مثلاً مراقبت مو"
+              />
             </label>
+
             <label>
               قیمت خرید (تومان)
-              <input type="number" min="0" inputMode="numeric" value={productCost} onChange={e => setProductCost(e.target.value)}/>
+              <input
+                type="number"
+                min="0"
+                inputMode="numeric"
+                value={productCost}
+                onChange={e => setProductCost(e.target.value)}
+              />
             </label>
+
             <label>
               قیمت فروش (تومان)
-              <input type="number" min="0" inputMode="numeric" value={productPrice} onChange={e => setProductPrice(e.target.value)}/>
+              <input
+                type="number"
+                min="0"
+                inputMode="numeric"
+                value={productPrice}
+                onChange={e => setProductPrice(e.target.value)}
+              />
             </label>
+
             <label>
               موجودی فعلی (عدد)
-              <input type="number" min="0" step="1" inputMode="numeric" value={productStock} onChange={e => setProductStock(e.target.value)}/>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                value={productStock}
+                onChange={e => setProductStock(e.target.value)}
+              />
             </label>
+
             <label>
               هشدار وقتی موجودی به این عدد رسید
-              <input type="number" min="0" step="1" inputMode="numeric" value={productMinStock} onChange={e => setProductMinStock(e.target.value)}/>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                value={productMinStock}
+                onChange={e => setProductMinStock(e.target.value)}
+              />
             </label>
-            <button className="primary full" onClick={saveProduct} disabled={!productName.trim() || saving}>
-              <Save size={17}/>
+
+            <button
+              className="primary full"
+              onClick={saveProduct}
+              disabled={!productName.trim() || saving}
+            >
+              <Save size={17} />
               {saving ? 'در حال ذخیره...' : editingProduct ? 'ذخیره تغییرات' : 'ثبت محصول'}
             </button>
           </section>
@@ -797,7 +976,7 @@ export default function App() {
           <section className="modal customer-form" onClick={e => e.stopPropagation()}>
             <div className="modal-title">
               <h3>ثبت سفارش جدید</h3>
-              <button onClick={() => !saving && setShowOrderForm(false)}><X/></button>
+              <button onClick={() => !saving && setShowOrderForm(false)}><X /></button>
             </div>
 
             <label>
@@ -805,7 +984,7 @@ export default function App() {
               <select
                 value={orderCustomer}
                 onChange={e => setOrderCustomer(e.target.value)}
-                style={{width:'100%',padding:12,borderRadius:10,border:'1px solid #ccc'}}
+                style={{ width: '100%', padding: 12, borderRadius: 10, border: '1px solid #ccc' }}
               >
                 <option value="">انتخاب مشتری...</option>
                 {customers.map(c => (
@@ -820,7 +999,7 @@ export default function App() {
             </div>
 
             <label className="search">
-              <Search size={18}/>
+              <Search size={18} />
               <input
                 value={orderSearch}
                 onChange={e => setOrderSearch(e.target.value)}
@@ -828,36 +1007,47 @@ export default function App() {
               />
             </label>
 
-            <div style={{maxHeight:260,overflowY:'auto'}}>
+            <div style={{ maxHeight: 260, overflowY: 'auto' }}>
               {products.filter(p =>
                 (p.name + p.code).toLowerCase().includes(orderSearch.toLowerCase())
               ).map(p => {
                 const item = cart.find(x => x.productId === p.id)
                 const quantity = item?.quantity || 0
+
                 return (
                   <div key={p.id} style={{
-                    display:'flex',alignItems:'center',justifyContent:'space-between',
-                    gap:8,padding:10,marginBottom:8,border:'1px solid #e0e4ed',
-                    borderRadius:10
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    padding: 10,
+                    marginBottom: 8,
+                    border: '1px solid #e0e4ed',
+                    borderRadius: 10
                   }}>
-                    <div style={{minWidth:0}}>
+                    <div style={{ minWidth: 0 }}>
                       <b>{p.name}</b>
-                      <small style={{display:'block',color:'#667085'}}>
+                      <small style={{ display: 'block', color: '#667085' }}>
                         {money(p.price)} تومان | موجودی: {money(p.stock)}
                       </small>
                     </div>
-                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <button
-                        onClick={() => changeCart(p.id,-1)}
+                        onClick={() => changeCart(p.id, -1)}
                         disabled={quantity === 0}
-                        style={{padding:6}}
-                      ><Minus size={17}/></button>
+                        style={{ padding: 6 }}
+                      >
+                        <Minus size={17} />
+                      </button>
                       <b>{money(quantity)}</b>
                       <button
-                        onClick={() => changeCart(p.id,1)}
+                        onClick={() => changeCart(p.id, 1)}
                         disabled={quantity >= p.stock || p.stock <= 0}
-                        style={{padding:6}}
-                      ><Plus size={17}/></button>
+                        style={{ padding: 6 }}
+                      >
+                        <Plus size={17} />
+                      </button>
                     </div>
                   </div>
                 )
@@ -865,14 +1055,17 @@ export default function App() {
             </div>
 
             {cart.length > 0 && (
-              <div style={{padding:12,background:'#f4f6fb',borderRadius:12,marginTop:12}}>
+              <div style={{ padding: 12, background: '#f4f6fb', borderRadius: 12, marginTop: 12 }}>
                 <b>اقلام انتخاب‌شده</b>
                 {cart.map(item => {
                   const p = products.find(x => x.id === item.productId)
                   if (!p) return null
+
                   return (
                     <div key={item.productId} style={{
-                      display:'flex',justifyContent:'space-between',paddingTop:8
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      paddingTop: 8
                     }}>
                       <small>{p.name} × {money(item.quantity)}</small>
                       <small>{money(p.price * item.quantity)} تومان</small>
@@ -904,21 +1097,27 @@ export default function App() {
             </label>
 
             <div style={{
-              padding:14,background:'#f4f6fb',borderRadius:12,
-              display:'grid',gap:8,marginTop:12
+              padding: 14,
+              background: '#f4f6fb',
+              borderRadius: 12,
+              display: 'grid',
+              gap: 8,
+              marginTop: 12
             }}>
-              <div style={{display:'flex',justifyContent:'space-between'}}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>مبلغ کل</span><b>{money(cartTotal)} تومان</b>
               </div>
-              <div style={{display:'flex',justifyContent:'space-between'}}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>تخفیف</span><b>{money(discountValue)} تومان</b>
               </div>
               <div style={{
-                display:'flex',justifyContent:'space-between',
-                borderTop:'1px solid #d8deeb',paddingTop:10
+                display: 'flex',
+                justifyContent: 'space-between',
+                borderTop: '1px solid #d8deeb',
+                paddingTop: 10
               }}>
                 <b>مبلغ نهایی</b>
-                <b style={{color:'#315da8'}}>{money(finalTotal)} تومان</b>
+                <b style={{ color: '#315da8' }}>{money(finalTotal)} تومان</b>
               </div>
             </div>
 
@@ -926,9 +1125,9 @@ export default function App() {
               className="primary full"
               onClick={saveOrder}
               disabled={!orderCustomer || !cart.length || saving || discountValue > cartTotal}
-              style={{marginTop:14}}
+              style={{ marginTop: 14 }}
             >
-              <CheckCircle size={18}/>
+              <CheckCircle size={18} />
               {saving ? 'در حال ثبت سفارش...' : 'تأیید و ثبت سفارش'}
             </button>
           </section>
