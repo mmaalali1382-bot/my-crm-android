@@ -1,0 +1,94 @@
+
+:root {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] body,
+:root[data-theme="dark"] .app-shell {
+  background: #111827;
+  color: #e5e7eb;
+}
+
+:root[data-theme="dark"] .topbar {
+  background: #080f20;
+}
+
+:root[data-theme="dark"] .welcome {
+  background: #202d45;
+}
+
+:root[data-theme="dark"] .welcome-icon,
+:root[data-theme="dark"] .stats article,
+:root[data-theme="dark"] .assistant,
+:root[data-theme="dark"] .quick button,
+:root[data-theme="dark"] .customer,
+:root[data-theme="dark"] .modal,
+:root[data-theme="dark"] .empty-card {
+  background: #1f2937;
+  color: #e5e7eb;
+  border-color: #374151;
+}
+
+:root[data-theme="dark"] .welcome p,
+:root[data-theme="dark"] .assistant p,
+:root[data-theme="dark"] .stats small,
+:root[data-theme="dark"] .customer small,
+:root[data-theme="dark"] .eyebrow {
+  color: #aab6c8;
+}
+
+:root[data-theme="dark"] .quick button,
+:root[data-theme="dark"] .customer-main {
+  color: #e5e7eb;
+}
+
+:root[data-theme="dark"] .search,
+:root[data-theme="dark"] .search input,
+:root[data-theme="dark"] .modal input,
+:root[data-theme="dark"] .modal textarea,
+:root[data-theme="dark"] .modal select,
+:root[data-theme="dark"] select {
+  background: #263449;
+  color: #f3f4f6;
+  border-color: #475569;
+}
+
+:root[data-theme="dark"] .customer-actions {
+  border-color: #374151;
+}
+
+:root[data-theme="dark"] .customer-actions button {
+  background: #334155;
+  color: #e5e7eb;
+}
+
+:root[data-theme="dark"] .avatar {
+  background: #334155;
+  color: #dbeafe;
+}
+
+:root[data-theme="dark"] .modal-backdrop {
+  background: #000b;
+}
+
+:root[data-theme="dark"] .section-title span,
+:root[data-theme="dark"] .empty {
+  color: #aab6c8;
+}
+
+:root[data-theme="dark"] .primary {
+  background: #365b9b;
+  color: white;
+}
+
+:root[data-theme="dark"] {
+  --drawer-bg: #1f2937;
+  --drawer-text: #e5e7eb;
+  --drawer-border: #374151;
+  --drawer-active: #334155;
+  --drawer-active-text: #bfdbfe;
+}
