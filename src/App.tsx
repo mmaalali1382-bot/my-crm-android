@@ -3,8 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Users, Package, ClipboardList, Wallet, Plus, Search, Sparkles,
   Bell, ChevronLeft, Pencil, Trash2, X, Save, FileText, Building2,
-  AlertTriangle, Boxes, ShoppingCart, Minus, CheckCircle, ShieldCheck,
-  CalendarDays
+  AlertTriangle, Boxes, ShoppingCart, Minus, CheckCircle, CalendarDays
 } from 'lucide-react'
 import {
   initializeDatabase, getCustomers, addCustomer as addCustomerToDb,
@@ -15,6 +14,7 @@ import {
 import Payments from './Payments'
 import Backup from './Backup'
 import FollowUps from './FollowUps'
+import NavigationDrawer from './NavigationDrawer'
 
 type Customer = {
   id: number
@@ -404,7 +404,11 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div>
+        <NavigationDrawer
+          activeTab={tab}
+          onNavigate={setTab}
+        />
+        <div style={{flex: 1}}>
           <div className="eyebrow">مدیریت هوشمند ارتباط با مشتری</div>
           <h1>CRM شخصی</h1>
         </div>
@@ -711,27 +715,6 @@ export default function App() {
       {tab === 'پرداخت‌ها' && <Payments />}
 
       {tab === 'پشتیبان‌گیری' && <Backup />}
-
-      <nav className="bottom-nav">
-        {([
-          ['خانه', Sparkles],
-          ['مشتریان', Users],
-          ['محصولات', Package],
-          ['سفارش‌ها', ClipboardList],
-          ['پیگیری‌ها', CalendarDays],
-          ['پرداخت‌ها', Wallet],
-          ['پشتیبان‌گیری', ShieldCheck]
-        ] as const).map(([label, Icon]) => (
-          <button
-            key={label}
-            className={tab === label ? 'active' : ''}
-            onClick={() => setTab(label)}
-          >
-            <Icon size={20}/>
-            <small>{label}</small>
-          </button>
-        ))}
-      </nav>
 
       {showForm && (
         <div className="modal-backdrop" onClick={() => !saving && setShowForm(false)}>
