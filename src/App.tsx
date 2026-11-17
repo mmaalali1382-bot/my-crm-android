@@ -11,6 +11,7 @@ import {
   updateProduct, deleteProduct, getOrders, addOrder, updateOrderStatus,
   type OrderRecord
 } from './db/database'
+import { ensureCustomerDetailsSchema } from './db/customerDetails'
 import Payments from './Payments'
 import Backup from './Backup'
 import FollowUps from './FollowUps'
@@ -120,6 +121,7 @@ export default function App() {
     async function start() {
       try {
         await initializeDatabase()
+        await ensureCustomerDetailsSchema()
         await refreshAll()
       } catch (err) {
         console.error(err)
