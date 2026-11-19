@@ -22,6 +22,8 @@ import {
   type ExpenseRecord
 } from './db/database'
 
+import { getGoalSettings } from './db/goals'
+
 import {
   exportFinancialReport,
   exportFinancialReportExcel,
@@ -29,8 +31,6 @@ import {
 } from './reportExport'
 
 type Period = 'today' | 'week' | 'month' | 'all'
-
-const MONTHLY_TARGET = 500_000_000
 
 const money = (value: number) =>
   new Intl.NumberFormat('fa-IR').format(Math.round(value || 0))
@@ -83,19 +83,22 @@ export default function Reports() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [expandedOrderIds, setExpandedOrderIds] = useState<number[]>([])
+  const [monthlyTarget, setMonthlyTarget] = useState(500000000)
 
   async function refresh() {
     try {
       setLoading(true)
       setError('')
 
-      const [orderRows, expenseRows] = await Promise.all([
+      const [orderRows, expenseRows, goalSettings] = await Promise.all([
         getOrders(),
-        getExpenses()
+        getExpenses(),
+        getGoalSettings()
       ])
 
       setOrders(orderRows)
       setExpenses(expenseRows)
+      setMonthlyTarget(goalSettings.monthlyTarget)
     } catch (e) {
       setError(
         e instanceof Error
@@ -263,10 +266,12 @@ export default function Reports() {
       0
     )
 
-    const targetPercent = Math.min(
-      100,
-      Math.max(0, (monthSales / MONTHLY_TARGET) * 100)
-    )
+    const targetPercent = monthlyTarget > 0
+      ? Math.min(
+          100,
+          Math.max(0, (monthSales / monthlyTarget) * 100)
+        )
+      : 0
 
     return {
       revenue,
@@ -281,7 +286,7 @@ export default function Reports() {
       monthSales,
       targetPercent
     }
-  }, [orders, expenses, period])
+  }, [orders, expenses, period, monthlyTarget])
 
   const periodLabel: Record<Period, string> = {
     today: 'امروز',
@@ -590,14 +595,16 @@ export default function Reports() {
             >
               <b>{formatPercent(report.targetPercent)} از هدف</b>
               <span style={{ color: 'var(--muted, #667085)' }}>
-                هدف: {money(MONTHLY_TARGET)}
+                هدف: {money(monthlyTarget)}
               </span>
             </div>
 
             <small style={labelStyle}>
-              {report.monthSales >= MONTHLY_TARGET
-                ? 'هدف فروش ماهانه محقق شده است.'
-                : `تا رسیدن به هدف، ${money(MONTHLY_TARGET - report.monthSales)} تومان باقی مانده است.`}
+              {monthlyTarget <= 0
+                ? 'برای نمایش درصد پیشرفت، هدف ماهانه را در داشبورد تنظیم کن.'
+                : report.monthSales >= monthlyTarget
+                  ? 'هدف فروش ماهانه محقق شده است.'
+                  : `تا رسیدن به هدف، ${money(monthlyTarget - report.monthSales)} تومان باقی مانده است.`}
             </small>
           </section>
 
