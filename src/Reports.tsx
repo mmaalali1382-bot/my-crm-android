@@ -20,6 +20,7 @@ import {
   type OrderRecord,
   type ExpenseRecord
 } from './db/database'
+import { exportFinancialReport } from './reportExport'
 
 type Period = 'today' | 'week' | 'month' | 'all'
 
@@ -316,14 +317,34 @@ export default function Reports() {
           <h2>گزارش‌های مالی و سود</h2>
         </div>
 
-        <button
-          className="icon-btn"
-          onClick={refresh}
-          disabled={loading}
-          aria-label="به‌روزرسانی گزارش"
-        >
-          <RefreshCw size={19} />
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            className="primary compact"
+            onClick={async () => {
+              try {
+                setError('')
+                await exportFinancialReport(orders, expenses)
+              } catch (e) {
+                setError(
+                  e instanceof Error
+                    ? e.message
+                    : 'خروجی گزارش مالی انجام نشد.'
+                )
+              }
+            }}
+            disabled={loading}
+          >
+            خروجی CSV
+          </button>
+          <button
+            className="icon-btn"
+            onClick={refresh}
+            disabled={loading}
+            aria-label="به‌روزرسانی گزارش"
+          >
+            <RefreshCw size={19} />
+          </button>
+        </div>
       </div>
 
       {error && (
