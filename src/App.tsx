@@ -24,6 +24,7 @@ import Payments from './Payments'
 import Backup from './Backup'
 import FollowUps from './FollowUps'
 import Consultations from './Consultations'
+import Reports from './Reports'
 import NavigationDrawer from './NavigationDrawer'
 import CustomerManagement from './CustomerManagement'
 
@@ -787,6 +788,8 @@ export default function App() {
       {tab === 'مشاوره‌ها' && <Consultations />}
 
       {tab === 'پرداخت‌ها' && <Payments />}
+
+      {tab === 'گزارش‌های مالی' && <Reports />}
 
       {tab === 'پشتیبان‌گیری' && <Backup />}
 
