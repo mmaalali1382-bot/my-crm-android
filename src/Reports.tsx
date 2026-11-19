@@ -9,7 +9,9 @@ import {
   RefreshCw,
   CalendarDays,
   Target,
-  Receipt
+  Receipt,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react'
 
 import {
@@ -42,6 +44,18 @@ const dateKey = (value: string) => {
 
 const orderDate = (value: string) => dateKey(value || '')
 
+const displayDate = (value: string) => {
+  const key = orderDate(value)
+  if (!key) return 'نامشخص'
+
+  const [year, month, day] = key.split('-').map(Number)
+  if (!year || !month || !day) return key
+
+  return new Intl.DateTimeFormat('fa-IR').format(
+    new Date(year, month - 1, day)
+  )
+}
+
 const startOfWeek = (date: Date) => {
   const result = new Date(date)
   const day = result.getDay()
@@ -61,6 +75,7 @@ export default function Reports() {
   const [period, setPeriod] = useState<Period>('month')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [expandedOrderIds, setExpandedOrderIds] = useState<number[]>([])
 
   async function refresh() {
     try {
@@ -170,6 +185,14 @@ export default function Reports() {
 
     selectedOrders.forEach(order => {
       order.items.forEach(item => {
+        const quantity = Number(item.quantity || 0)
+        const itemRevenue = quantity * Number(item.unitPrice || 0)
+        const orderTotal = Number(order.total || 0)
+        const discountShare = orderTotal > 0
+          ? Number(order.discount || 0) * (itemRevenue / orderTotal)
+          : 0
+        const netItemRevenue = itemRevenue - discountShare
+
         const current = productMap.get(item.productId) || {
           name: item.productName,
           quantity: 0,
@@ -178,11 +201,9 @@ export default function Reports() {
           profit: 0
         }
 
-        current.quantity += Number(item.quantity || 0)
-        current.revenue +=
-          Number(item.quantity || 0) * Number(item.unitPrice || 0)
-        current.cost +=
-          Number(item.quantity || 0) * Number(item.unitCost || 0)
+        current.quantity += quantity
+        current.revenue += netItemRevenue
+        current.cost += quantity * Number(item.unitCost || 0)
         current.profit = current.revenue - current.cost
 
         productMap.set(item.productId, current)
@@ -192,6 +213,39 @@ export default function Reports() {
     const products = Array.from(productMap.values()).sort(
       (a, b) => b.profit - a.profit
     )
+
+    const orderDetails = selectedOrders.map(order => {
+      const orderCost = order.items.reduce(
+        (sum, item) => sum +
+          Number(item.quantity || 0) * Number(item.unitCost || 0),
+        0
+      )
+      const orderProfit = Number(order.finalTotal || 0) - orderCost
+      const orderTotal = Number(order.total || 0)
+      const orderDiscount = Number(order.discount || 0)
+
+      const itemsWithProfit = order.items.map(item => {
+        const quantity = Number(item.quantity || 0)
+        const itemRevenue = quantity * Number(item.unitPrice || 0)
+        const itemCost = quantity * Number(item.unitCost || 0)
+        const discountShare = orderTotal > 0
+          ? orderDiscount * (itemRevenue / orderTotal)
+          : 0
+
+        return {
+          ...item,
+          netRevenue: itemRevenue - discountShare,
+          profitAfterDiscount: itemRevenue - discountShare - itemCost
+        }
+      })
+
+      return {
+        ...order,
+        orderCost,
+        orderProfit,
+        items: itemsWithProfit
+      }
+    })
 
     const monthOrders = orders.filter(order => {
       if (order.status === 'لغو شده') return false
@@ -218,6 +272,7 @@ export default function Reports() {
       orderCount: selectedOrders.length,
       expenseCount: selectedExpenses.length,
       products,
+      orderDetails,
       monthSales,
       targetPercent
     }
@@ -505,7 +560,7 @@ export default function Reports() {
                 <div className="customer-info">
                   <b>{product.name}</b>
                   <small>تعداد فروش: {money(product.quantity)}</small>
-                  <small>مبلغ فروش: {money(product.revenue)} تومان</small>
+                  <small>مبلغ فروش پس از تخفیف: {money(product.revenue)} تومان</small>
                   <small>بهای تمام‌شده: {money(product.cost)} تومان</small>
                   <b
                     style={{
@@ -523,6 +578,115 @@ export default function Reports() {
             <p className="empty">
               در این بازه هنوز فروشی برای نمایش وجود ندارد.
             </p>
+          )}
+
+          <div className="section-title" style={{ marginTop: 24 }}>
+            <h3>
+              <Receipt size={19} />
+              سود و جزئیات هر سفارش
+            </h3>
+            <span>{money(report.orderDetails.length)} سفارش</span>
+          </div>
+
+          {report.orderDetails.map(order => {
+            const expanded = expandedOrderIds.includes(order.id)
+
+            return (
+              <article
+                key={order.id}
+                style={{ ...cardStyle, marginBottom: 10 }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <b>{order.customerName}</b>
+                    <small style={labelStyle}>سفارش شماره {money(order.id)}</small>
+                    <small style={labelStyle}>تاریخ: {displayDate(order.createdAt)}</small>
+                    <small style={labelStyle}>وضعیت: {order.status}</small>
+                  </div>
+                  <button
+                    onClick={() => setExpandedOrderIds(current =>
+                      current.includes(order.id)
+                        ? current.filter(id => id !== order.id)
+                        : [...current, order.id]
+                    )}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      border: '1px solid var(--border, #ddd)',
+                      borderRadius: 9,
+                      padding: '8px 10px',
+                      background: 'transparent',
+                      color: 'var(--text, inherit)',
+                      font: 'inherit',
+                      fontSize: 12,
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {expanded ? 'بستن جزئیات' : 'جزئیات'}
+                    {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 9, marginTop: 14 }}>
+                  <div>
+                    <small style={labelStyle}>فروش نهایی</small>
+                    <b style={{ display: 'block', marginTop: 4 }}>{money(order.finalTotal)} تومان</b>
+                  </div>
+                  <div>
+                    <small style={labelStyle}>بهای تمام‌شده</small>
+                    <b style={{ display: 'block', marginTop: 4 }}>{money(order.orderCost)} تومان</b>
+                  </div>
+                  <div>
+                    <small style={labelStyle}>سود سفارش</small>
+                    <b style={{ display: 'block', marginTop: 4, color: order.orderProfit >= 0 ? '#16834b' : '#b33b48' }}>
+                      {money(order.orderProfit)} تومان
+                    </b>
+                  </div>
+                  <div>
+                    <small style={labelStyle}>تخفیف</small>
+                    <b style={{ display: 'block', marginTop: 4 }}>{money(order.discount)} تومان</b>
+                  </div>
+                </div>
+
+                {expanded && (
+                  <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border, #e7eaf0)' }}>
+                    <b style={{ fontSize: 13 }}>اقلام سفارش</b>
+                    {order.items.map(item => (
+                      <div key={item.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border, #edf0f4)' }}>
+                        <b style={{ fontSize: 13 }}>{item.productName}</b>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, marginTop: 5 }}>
+                          <small style={labelStyle}>تعداد: {money(item.quantity)}</small>
+                          <small style={labelStyle}>قیمت فروش واحد: {money(item.unitPrice)}</small>
+                          <small style={labelStyle}>قیمت خرید واحد: {money(item.unitCost)}</small>
+                          <small style={labelStyle}>فروش پس از سهم تخفیف: {money(item.netRevenue)}</small>
+                          <small style={labelStyle}>سود ردیف پس از تخفیف: {money(item.profitAfterDiscount)}</small>
+                        </div>
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 12 }}>
+                      <span style={{ fontSize: 12 }}>جمع اقلام قبل از تخفیف</span>
+                      <b>{money(order.total)} تومان</b>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 7 }}>
+                      <span style={{ fontSize: 12 }}>مبلغ تخفیف</span>
+                      <b>{money(order.discount)} تومان</b>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 7 }}>
+                      <span style={{ fontSize: 12 }}>مبلغ نهایی سفارش</span>
+                      <b>{money(order.finalTotal)} تومان</b>
+                    </div>
+                    {order.notes && (
+                      <small style={{ ...labelStyle, lineHeight: 1.8 }}>توضیحات: {order.notes}</small>
+                    )}
+                  </div>
+                )}
+              </article>
+            )
+          })}
+
+          {!report.orderDetails.length && (
+            <p className="empty">در این بازه سفارشی برای نمایش وجود ندارد.</p>
           )}
 
           <section
