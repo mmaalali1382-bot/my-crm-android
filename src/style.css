@@ -565,3 +565,117 @@ main > h2 {
   color: #f3f4f6;
   border-color: #475569;
 }
+
+/* Consultations */
+
+.consultation-result {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 20px;
+  padding: 5px 9px;
+  font-size: 10px;
+  font-weight: 600;
+  background: #edf1f9;
+  color: #344d7c;
+}
+
+.consultation-result.purchased {
+  background: #e5f5ec;
+  color: #247447;
+}
+
+.consultation-result.not-purchased {
+  background: #fff0f0;
+  color: #a33c48;
+}
+
+.consultation-result.pending {
+  background: #fff4df;
+  color: #94651b;
+}
+
+.consultation-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.consultation-filters button,
+.consultation-copy {
+  border: 1px solid #dce2ec;
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: white;
+  color: #34496f;
+  font: inherit;
+  font-size: 11px;
+}
+
+.consultation-filters button.active {
+  background: #1b315c;
+  border-color: #1b315c;
+  color: white;
+}
+
+.consultation-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  margin: 8px 0 14px;
+  background: #e9eef9;
+  border-color: #d5deef;
+  color: #1b315c;
+  font-weight: 600;
+}
+
+.consultation-message {
+  padding: 11px 13px;
+  margin: 10px 0;
+  border-radius: 11px;
+  background: #edf1f9;
+  color: #34496f;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.consultation-card-details {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e8ebf1;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.consultation-card-details p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.consultation-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+:root[data-theme="dark"] .consultation-filters button,
+:root[data-theme="dark"] .consultation-copy {
+  background: #263449;
+  border-color: #475569;
+  color: #e5eaf3;
+}
+
+:root[data-theme="dark"] .consultation-filters button.active {
+  background: #526b9c;
+  color: white;
+}
+
+:root[data-theme="dark"] .consultation-message {
+  background: #263449;
+  color: #dbe4f5;
+}
