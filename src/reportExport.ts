@@ -1,5 +1,7 @@
+
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
+import * as XLSX from 'xlsx'
 import type { OrderRecord, ExpenseRecord } from './db/database'
 
 type ReportPeriod = 'today' | 'week' | 'month' | 'all'
@@ -65,11 +67,11 @@ const periodLabels: Record<ReportPeriod, string> = {
   all: 'All-Time'
 }
 
-export async function exportFinancialReport(
+const buildReportRows = (
   orders: OrderRecord[],
   expenses: ExpenseRecord[],
   period: ReportPeriod
-) {
+): string[][] => {
   const { start, end } = getPeriodDates(period)
 
   const isInPeriod = (value: string) => {
@@ -143,6 +145,16 @@ export async function exportFinancialReport(
     ])
   }
 
+  return rows
+}
+
+export async function exportFinancialReport(
+  orders: OrderRecord[],
+  expenses: ExpenseRecord[],
+  period: ReportPeriod
+) {
+  const rows = buildReportRows(orders, expenses, period)
+
   const csv = '\uFEFF' + rows
     .map(row => row.map(csvCell).join(','))
     .join('\r\n')
@@ -162,5 +174,57 @@ export async function exportFinancialReport(
     text: `گزارش فروش، سود سفارش‌ها و هزینه‌ها - ${periodLabels[period]}`,
     url: file.uri,
     dialogTitle: 'ذخیره یا ارسال گزارش مالی'
+  })
+}
+
+export async function exportFinancialReportExcel(
+  orders: OrderRecord[],
+  expenses: ExpenseRecord[],
+  period: ReportPeriod
+) {
+  const rows = buildReportRows(orders, expenses, period)
+
+  const worksheet = XLSX.utils.aoa_to_sheet(rows)
+
+  worksheet['!cols'] = [
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 25 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 16 },
+    { wch: 20 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 35 }
+  ]
+
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(
+    workbook,
+    worksheet,
+    'گزارش مالی'
+  )
+
+  const excelBase64 = XLSX.write(workbook, {
+    bookType: 'xlsx',
+    type: 'base64'
+  })
+
+  const fileName =
+    `CRM-Financial-Report-${periodLabels[period]}-${localDateKey(new Date())}.xlsx`
+
+  const file = await Filesystem.writeFile({
+    path: fileName,
+    data: excelBase64,
+    directory: Directory.Cache
+  })
+
+  await Share.share({
+    title: 'گزارش مالی اکسل CRM',
+    text: `گزارش اکسل فروش، سود سفارش‌ها و هزینه‌ها - ${periodLabels[period]}`,
+    url: file.uri,
+    dialogTitle: 'ذخیره یا ارسال فایل اکسل'
   })
 }
