@@ -84,6 +84,7 @@ export default function Reports() {
   const [error, setError] = useState('')
   const [expandedOrderIds, setExpandedOrderIds] = useState<number[]>([])
   const [monthlyTarget, setMonthlyTarget] = useState(500000000)
+  const [dailyTarget, setDailyTarget] = useState(0)
 
   async function refresh() {
     try {
@@ -99,6 +100,7 @@ export default function Reports() {
       setOrders(orderRows)
       setExpenses(expenseRows)
       setMonthlyTarget(goalSettings.monthlyTarget)
+      setDailyTarget(goalSettings.dailyTarget)
     } catch (e) {
       setError(
         e instanceof Error
@@ -255,6 +257,20 @@ export default function Reports() {
       }
     })
 
+    const todayOrders = orders.filter(order => {
+      if (order.status === 'لغو شده') return false
+      return orderDate(order.createdAt) === today
+    })
+
+    const todaySales = todayOrders.reduce(
+      (sum, order) => sum + Number(order.finalTotal || 0),
+      0
+    )
+
+    const dailyTargetPercent = dailyTarget > 0
+      ? Math.min(100, Math.max(0, (todaySales / dailyTarget) * 100))
+      : 0
+
     const monthOrders = orders.filter(order => {
       if (order.status === 'لغو شده') return false
       const date = orderDate(order.createdAt)
@@ -284,9 +300,11 @@ export default function Reports() {
       products,
       orderDetails,
       monthSales,
-      targetPercent
+      targetPercent,
+      todaySales,
+      dailyTargetPercent
     }
-  }, [orders, expenses, period, monthlyTarget])
+  }, [orders, expenses, period, monthlyTarget, dailyTarget])
 
   const periodLabel: Record<Period, string> = {
     today: 'امروز',
@@ -455,6 +473,90 @@ export default function Reports() {
         <p className="empty">در حال محاسبه گزارش‌ها...</p>
       ) : (
         <>
+          {period === 'today' && (
+            <section
+              style={{
+                ...cardStyle,
+                marginBottom: 14,
+                border: '1px solid #b8d8c4'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                <Target size={20} />
+                <b>هدف فروش روزانه</b>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  marginTop: 14,
+                  fontSize: 13
+                }}
+              >
+                <span>فروش امروز</span>
+                <b>{money(report.todaySales)} تومان</b>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  marginTop: 10,
+                  fontSize: 13
+                }}
+              >
+                <span>هدف تعیین‌شده امروز</span>
+                <b>{money(dailyTarget)} تومان</b>
+              </div>
+
+              <div
+                style={{
+                  height: 12,
+                  borderRadius: 20,
+                  background: 'var(--border, #e7eaf0)',
+                  overflow: 'hidden',
+                  marginTop: 12
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${report.dailyTargetPercent}%`,
+                    background: '#16834b',
+                    borderRadius: 20,
+                    transition: 'width .25s ease'
+                  }}
+                />
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  marginTop: 9,
+                  fontSize: 12
+                }}
+              >
+                <b>{formatPercent(report.dailyTargetPercent)} از هدف</b>
+                <span style={{ color: 'var(--muted, #667085)' }}>
+                  {money(report.orderCount)} سفارش امروز
+                </span>
+              </div>
+
+              <small style={labelStyle}>
+                {dailyTarget <= 0
+                  ? 'هنوز هدف روزانه تعیین نشده است. آن را از داشبورد تنظیم کن.'
+                  : report.todaySales >= dailyTarget
+                    ? 'آفرین! هدف فروش امروز محقق شده است.'
+                    : `برای رسیدن به هدف امروز، ${money(dailyTarget - report.todaySales)} تومان فروش دیگر لازم است.`}
+              </small>
+            </section>
+          )}
+
           <div className="section-title">
             <h3>
               <BarChart3 size={19} />
