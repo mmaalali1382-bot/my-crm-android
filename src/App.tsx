@@ -1,9 +1,7 @@
-
-import { useEffect, useMemo, useState } from 'react'
-import {
   Users, Package, ClipboardList, Wallet, Plus, Search, Sparkles,
   Bell, ChevronLeft, Pencil, Trash2, X, Save, FileText, Building2,
-  AlertTriangle, Boxes, ShoppingCart, Minus, CheckCircle, CalendarDays
+  AlertTriangle, Boxes, ShoppingCart, Minus, CheckCircle, CalendarDays,
+  MessageCircle
 } from 'lucide-react'
 import {
   initializeDatabase, getCustomers, addCustomer as addCustomerToDb,
