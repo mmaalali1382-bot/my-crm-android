@@ -11,7 +11,8 @@ import {
   Target,
   Receipt,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  FileText
 } from 'lucide-react'
 
 import {
@@ -20,9 +21,11 @@ import {
   type OrderRecord,
   type ExpenseRecord
 } from './db/database'
+
 import {
   exportFinancialReport,
-  exportFinancialReportExcel
+  exportFinancialReportExcel,
+  exportFinancialReportPDF
 } from './reportExport'
 
 type Period = 'today' | 'week' | 'month' | 'all'
@@ -112,6 +115,12 @@ export default function Reports() {
     const now = new Date()
     const today = todayString()
     const weekStart = startOfWeek(now)
+    const weekStartKey = [
+      weekStart.getFullYear(),
+      String(weekStart.getMonth() + 1).padStart(2, '0'),
+      String(weekStart.getDate()).padStart(2, '0')
+    ].join('-')
+
     const monthStart = `${now.getFullYear()}-${String(
       now.getMonth() + 1
     ).padStart(2, '0')}-01`
@@ -123,12 +132,7 @@ export default function Reports() {
       if (!date) return false
 
       if (period === 'today') return date === today
-
-      if (period === 'week') {
-        return date >= dateKey(weekStart.toISOString().slice(0, 10)) &&
-          date <= today
-      }
-
+      if (period === 'week') return date >= weekStartKey && date <= today
       if (period === 'month') return date >= monthStart && date <= today
 
       return true
@@ -136,15 +140,10 @@ export default function Reports() {
 
     const selectedExpenses = expenses.filter(expense => {
       const date = dateKey(expense.expenseDate || '')
-
       if (!date) return false
+
       if (period === 'today') return date === today
-
-      if (period === 'week') {
-        return date >= dateKey(weekStart.toISOString().slice(0, 10)) &&
-          date <= today
-      }
-
+      if (period === 'week') return date >= weekStartKey && date <= today
       if (period === 'month') return date >= monthStart && date <= today
 
       return true
@@ -220,10 +219,12 @@ export default function Reports() {
 
     const orderDetails = selectedOrders.map(order => {
       const orderCost = order.items.reduce(
-        (sum, item) => sum +
+        (sum, item) =>
+          sum +
           Number(item.quantity || 0) * Number(item.unitCost || 0),
         0
       )
+
       const orderProfit = Number(order.finalTotal || 0) - orderCost
       const orderTotal = Number(order.total || 0)
       const orderDiscount = Number(order.discount || 0)
@@ -312,6 +313,22 @@ export default function Reports() {
     marginTop: 8
   }
 
+  async function runExport(
+    exporter: () => Promise<unknown>,
+    fallbackMessage: string
+  ) {
+    try {
+      setError('')
+      await exporter()
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : fallbackMessage
+      )
+    }
+  }
+
   return (
     <main style={{ paddingBottom: 28 }}>
       <div className="page-heading">
@@ -320,21 +337,20 @@ export default function Reports() {
           <h2>گزارش‌های مالی و سود</h2>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap'
+          }}
+        >
           <button
             className="primary compact"
-            onClick={async () => {
-              try {
-                setError('')
-                await exportFinancialReport(orders, expenses, period)
-              } catch (e) {
-                setError(
-                  e instanceof Error
-                    ? e.message
-                    : 'خروجی گزارش مالی انجام نشد.'
-                )
-              }
-            }}
+            onClick={() => runExport(
+              () => exportFinancialReport(orders, expenses, period),
+              'خروجی CSV انجام نشد.'
+            )}
             disabled={loading}
           >
             خروجی CSV
@@ -342,21 +358,25 @@ export default function Reports() {
 
           <button
             className="primary compact"
-            onClick={async () => {
-              try {
-                setError('')
-                await exportFinancialReportExcel(orders, expenses, period)
-              } catch (e) {
-                setError(
-                  e instanceof Error
-                    ? e.message
-                    : 'خروجی اکسل گزارش مالی انجام نشد.'
-                )
-              }
-            }}
+            onClick={() => runExport(
+              () => exportFinancialReportExcel(orders, expenses, period),
+              'خروجی اکسل انجام نشد.'
+            )}
             disabled={loading}
           >
             خروجی Excel
+          </button>
+
+          <button
+            className="primary compact"
+            onClick={() => runExport(
+              () => exportFinancialReportPDF(orders, expenses, period),
+              'ساخت فایل PDF انجام نشد.'
+            )}
+            disabled={loading}
+          >
+            <FileText size={16} style={{ verticalAlign: 'middle', marginLeft: 5 }} />
+            خروجی PDF
           </button>
 
           <button
@@ -448,9 +468,7 @@ export default function Reports() {
             <article style={cardStyle}>
               <TrendingUp size={21} color="#16834b" />
               <span style={labelStyle}>فروش ثبت‌شده</span>
-              <strong style={valueStyle}>
-                {money(report.revenue)}
-              </strong>
+              <strong style={valueStyle}>{money(report.revenue)}</strong>
               <small style={labelStyle}>
                 {money(report.orderCount)} سفارش
               </small>
@@ -459,10 +477,10 @@ export default function Reports() {
             <article style={cardStyle}>
               <Package size={21} color="#315da8" />
               <span style={labelStyle}>بهای تمام‌شده کالا</span>
-              <strong style={valueStyle}>
-                {money(report.cost)}
-              </strong>
-              <small style={labelStyle}>بر اساس قیمت خرید ذخیره‌شده در سفارش</small>
+              <strong style={valueStyle}>{money(report.cost)}</strong>
+              <small style={labelStyle}>
+                بر اساس قیمت خرید ذخیره‌شده در سفارش
+              </small>
             </article>
 
             <article style={cardStyle}>
@@ -604,8 +622,12 @@ export default function Reports() {
                 <div className="customer-info">
                   <b>{product.name}</b>
                   <small>تعداد فروش: {money(product.quantity)}</small>
-                  <small>مبلغ فروش پس از تخفیف: {money(product.revenue)} تومان</small>
-                  <small>بهای تمام‌شده: {money(product.cost)} تومان</small>
+                  <small>
+                    مبلغ فروش پس از تخفیف: {money(product.revenue)} تومان
+                  </small>
+                  <small>
+                    بهای تمام‌شده: {money(product.cost)} تومان
+                  </small>
                   <b
                     style={{
                       color: product.profit >= 0 ? '#16834b' : '#b33b48'
@@ -640,13 +662,25 @@ export default function Reports() {
                 key={order.id}
                 style={{ ...cardStyle, marginBottom: 10 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 10,
+                    alignItems: 'flex-start'
+                  }}
+                >
                   <div style={{ minWidth: 0 }}>
                     <b>{order.customerName}</b>
-                    <small style={labelStyle}>سفارش شماره {money(order.id)}</small>
-                    <small style={labelStyle}>تاریخ: {displayDate(order.createdAt)}</small>
+                    <small style={labelStyle}>
+                      سفارش شماره {money(order.id)}
+                    </small>
+                    <small style={labelStyle}>
+                      تاریخ: {displayDate(order.createdAt)}
+                    </small>
                     <small style={labelStyle}>وضعیت: {order.status}</small>
                   </div>
+
                   <button
                     onClick={() => setExpandedOrderIds(current =>
                       current.includes(order.id)
@@ -668,60 +702,140 @@ export default function Reports() {
                     }}
                   >
                     {expanded ? 'بستن جزئیات' : 'جزئیات'}
-                    {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    {expanded
+                      ? <ChevronUp size={16} />
+                      : <ChevronDown size={16} />}
                   </button>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 9, marginTop: 14 }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                    gap: 9,
+                    marginTop: 14
+                  }}
+                >
                   <div>
                     <small style={labelStyle}>فروش نهایی</small>
-                    <b style={{ display: 'block', marginTop: 4 }}>{money(order.finalTotal)} تومان</b>
+                    <b style={{ display: 'block', marginTop: 4 }}>
+                      {money(order.finalTotal)} تومان
+                    </b>
                   </div>
                   <div>
                     <small style={labelStyle}>بهای تمام‌شده</small>
-                    <b style={{ display: 'block', marginTop: 4 }}>{money(order.orderCost)} تومان</b>
+                    <b style={{ display: 'block', marginTop: 4 }}>
+                      {money(order.orderCost)} تومان
+                    </b>
                   </div>
                   <div>
                     <small style={labelStyle}>سود سفارش</small>
-                    <b style={{ display: 'block', marginTop: 4, color: order.orderProfit >= 0 ? '#16834b' : '#b33b48' }}>
+                    <b
+                      style={{
+                        display: 'block',
+                        marginTop: 4,
+                        color: order.orderProfit >= 0 ? '#16834b' : '#b33b48'
+                      }}
+                    >
                       {money(order.orderProfit)} تومان
                     </b>
                   </div>
                   <div>
                     <small style={labelStyle}>تخفیف</small>
-                    <b style={{ display: 'block', marginTop: 4 }}>{money(order.discount)} تومان</b>
+                    <b style={{ display: 'block', marginTop: 4 }}>
+                      {money(order.discount)} تومان
+                    </b>
                   </div>
                 </div>
 
                 {expanded && (
-                  <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border, #e7eaf0)' }}>
+                  <div
+                    style={{
+                      marginTop: 14,
+                      paddingTop: 12,
+                      borderTop: '1px solid var(--border, #e7eaf0)'
+                    }}
+                  >
                     <b style={{ fontSize: 13 }}>اقلام سفارش</b>
+
                     {order.items.map(item => (
-                      <div key={item.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border, #edf0f4)' }}>
+                      <div
+                        key={item.id}
+                        style={{
+                          padding: '10px 0',
+                          borderBottom: '1px solid var(--border, #edf0f4)'
+                        }}
+                      >
                         <b style={{ fontSize: 13 }}>{item.productName}</b>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, marginTop: 5 }}>
-                          <small style={labelStyle}>تعداد: {money(item.quantity)}</small>
-                          <small style={labelStyle}>قیمت فروش واحد: {money(item.unitPrice)}</small>
-                          <small style={labelStyle}>قیمت خرید واحد: {money(item.unitCost)}</small>
-                          <small style={labelStyle}>فروش پس از سهم تخفیف: {money(item.netRevenue)}</small>
-                          <small style={labelStyle}>سود ردیف پس از تخفیف: {money(item.profitAfterDiscount)}</small>
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                            gap: 6,
+                            marginTop: 5
+                          }}
+                        >
+                          <small style={labelStyle}>
+                            تعداد: {money(item.quantity)}
+                          </small>
+                          <small style={labelStyle}>
+                            قیمت فروش واحد: {money(item.unitPrice)}
+                          </small>
+                          <small style={labelStyle}>
+                            قیمت خرید واحد: {money(item.unitCost)}
+                          </small>
+                          <small style={labelStyle}>
+                            فروش پس از سهم تخفیف: {money(item.netRevenue)}
+                          </small>
+                          <small style={labelStyle}>
+                            سود ردیف پس از تخفیف: {money(item.profitAfterDiscount)}
+                          </small>
                         </div>
                       </div>
                     ))}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 12 }}>
-                      <span style={{ fontSize: 12 }}>جمع اقلام قبل از تخفیف</span>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                        marginTop: 12
+                      }}
+                    >
+                      <span style={{ fontSize: 12 }}>
+                        جمع اقلام قبل از تخفیف
+                      </span>
                       <b>{money(order.total)} تومان</b>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 7 }}>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                        marginTop: 7
+                      }}
+                    >
                       <span style={{ fontSize: 12 }}>مبلغ تخفیف</span>
                       <b>{money(order.discount)} تومان</b>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 7 }}>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                        marginTop: 7
+                      }}
+                    >
                       <span style={{ fontSize: 12 }}>مبلغ نهایی سفارش</span>
                       <b>{money(order.finalTotal)} تومان</b>
                     </div>
+
                     {order.notes && (
-                      <small style={{ ...labelStyle, lineHeight: 1.8 }}>توضیحات: {order.notes}</small>
+                      <small style={{ ...labelStyle, lineHeight: 1.8 }}>
+                        توضیحات: {order.notes}
+                      </small>
                     )}
                   </div>
                 )}
@@ -730,7 +844,9 @@ export default function Reports() {
           })}
 
           {!report.orderDetails.length && (
-            <p className="empty">در این بازه سفارشی برای نمایش وجود ندارد.</p>
+            <p className="empty">
+              در این بازه سفارشی برای نمایش وجود ندارد.
+            </p>
           )}
 
           <section
@@ -748,7 +864,10 @@ export default function Reports() {
                 نکته مهم درباره محاسبه سود
               </b>
             </div>
-            فروش بر اساس مبلغ نهایی سفارش محاسبه می‌شود، نه مبلغ دریافتی از مشتری. بهای تمام‌شده از قیمت خرید ذخیره‌شده برای اقلام همان سفارش محاسبه می‌شود. هزینه‌ها نیز از بخش هزینه‌های ثبت‌شده خوانده می‌شوند. بنابراین ثبت‌نکردن هزینه‌ها باعث می‌شود سود خالص واقعی نباشد.
+            فروش بر اساس مبلغ نهایی سفارش محاسبه می‌شود، نه مبلغ دریافتی از مشتری.
+            بهای تمام‌شده از قیمت خرید ذخیره‌شده برای اقلام همان سفارش محاسبه
+            می‌شود. هزینه‌ها نیز از بخش هزینه‌های ثبت‌شده خوانده می‌شوند.
+            بنابراین ثبت‌نکردن هزینه‌ها باعث می‌شود سود خالص واقعی نباشد.
           </section>
         </>
       )}
