@@ -46,6 +46,26 @@ jobs:
       - name: Sync Android project
         run: npx cap sync android
 
+      - name: Add Maven Central fallback
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("android/build.gradle")
+          s = p.read_text()
+
+          mirror = '        maven { url "https://repo1.maven.org/maven2" }'
+
+          if "https://repo1.maven.org/maven2" not in s:
+              s = s.replace(
+                  "repositories {",
+                  "repositories {\n" + mirror,
+                  1
+              )
+
+          p.write_text(s)
+          PY
+
       - name: Restore permanent signing key
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
