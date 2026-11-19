@@ -1,3 +1,4 @@
+
 import {
   CapacitorSQLite,
   SQLiteConnection,
@@ -184,6 +185,19 @@ export async function initializeDatabase(): Promise<SQLiteDBConnection> {
       notes TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(account_id) REFERENCES accounts(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS cancellation_settlements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      order_id INTEGER NOT NULL UNIQUE,
+      paid_amount REAL NOT NULL DEFAULT 0,
+      refund_amount REAL NOT NULL DEFAULT 0,
+      credit_amount REAL NOT NULL DEFAULT 0,
+      notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(customer_id) REFERENCES customers(id),
+      FOREIGN KEY(order_id) REFERENCES orders(id)
     );
   `);
 
@@ -608,7 +622,7 @@ export async function updateOrderStatus(
   }
 }
 
-// محاسبه مانده حساب هر مشتری
+// محاسبه مانده حساب هر مشتری با درنظرگرفتن تسویه سفارش‌های لغوشده
 export async function getCustomerBalances(): Promise<CustomerBalanceRecord[]> {
   const d = await initializeDatabase();
 
@@ -628,9 +642,20 @@ export async function getCustomerBalances(): Promise<CustomerBalanceRecord[]> {
       GROUP BY customer_id
     ) o ON o.customer_id = c.id
     LEFT JOIN (
-      SELECT customer_id, SUM(amount) AS totalPaid
+      SELECT
+        payments.customer_id,
+        MAX(
+          0,
+          SUM(payments.amount) - COALESCE(settlements.totalSettled, 0)
+        ) AS totalPaid
       FROM payments
-      GROUP BY customer_id
+      LEFT JOIN (
+        SELECT customer_id, SUM(paid_amount) AS totalSettled
+        FROM cancellation_settlements
+        GROUP BY customer_id
+      ) settlements
+        ON settlements.customer_id = payments.customer_id
+      GROUP BY payments.customer_id
     ) p ON p.customer_id = c.id
     ORDER BY balance DESC, c.name ASC
   `);
@@ -659,7 +684,7 @@ export async function getPayments(): Promise<PaymentRecord[]> {
   return (result.values || []) as PaymentRecord[];
 }
 
-// ثبت پرداخت با کنترل مانده بدهی
+// ثبت پرداخت با کنترل مانده بدهی و کسر تسویه‌های قبلی
 export async function addPayment(
   customerId: number,
   amount: number,
@@ -710,12 +735,20 @@ export async function addPayment(
           FROM orders
           WHERE customer_id = ? AND status != 'لغو شده'
         ), 0) -
-        COALESCE((
-          SELECT SUM(amount)
-          FROM payments
-          WHERE customer_id = ?
-        ), 0) AS balance`,
-      [customerId, customerId]
+        MAX(
+          0,
+          COALESCE((
+            SELECT SUM(amount)
+            FROM payments
+            WHERE customer_id = ?
+          ), 0) -
+          COALESCE((
+            SELECT SUM(paid_amount)
+            FROM cancellation_settlements
+            WHERE customer_id = ?
+          ), 0)
+        ) AS balance`,
+      [customerId, customerId, customerId]
     );
 
     const balance = Number(balanceResult.values?.[0]?.balance || 0);
