@@ -111,7 +111,11 @@ export async function settleCanceledOrder(
     throw new Error('مبالغ واردشده معتبر نیستند.');
   }
 
-  if (refundAmount + creditAmount !== paidAmount) {
+  const difference = Math.abs(
+    refundAmount + creditAmount - paidAmount
+  );
+
+  if (difference > 0.001) {
     throw new Error(
       'مجموع مبلغ بازپرداخت و اعتبار باید دقیقاً برابر مبلغ پرداخت‌شده باشد.'
     );
@@ -161,6 +165,39 @@ export async function settleCanceledOrder(
 
     if (existing.values?.length) {
       throw new Error('تسویه این سفارش قبلاً ثبت شده است.');
+    }
+
+    const paymentsResult = await db.query(
+      `SELECT COALESCE(SUM(amount), 0) AS totalPaid
+       FROM payments
+       WHERE customer_id = ?`,
+      [customerId]
+    );
+
+    const settlementsResult = await db.query(
+      `SELECT COALESCE(SUM(paid_amount), 0) AS alreadySettled
+       FROM cancellation_settlements
+       WHERE customer_id = ?`,
+      [customerId]
+    );
+
+    const totalPaid = Number(
+      paymentsResult.values?.[0]?.totalPaid || 0
+    );
+
+    const alreadySettled = Number(
+      settlementsResult.values?.[0]?.alreadySettled || 0
+    );
+
+    const availablePaidAmount = Math.max(
+      0,
+      totalPaid - alreadySettled
+    );
+
+    if (paidAmount > availablePaidAmount + 0.001) {
+      throw new Error(
+        `مبلغ قابل تسویه بیشتر از پرداخت‌های ثبت‌شده نیست. مبلغ قابل تخصیص: ${Math.floor(availablePaidAmount)} تومان`
+      );
     }
 
     await db.run(
