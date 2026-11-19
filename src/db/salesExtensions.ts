@@ -29,7 +29,29 @@ export type InstallmentRecord = {
   status: string
   notes: string
   createdAt: string
+  remainingAmount?: number
 }
+
+const PAYMENT_METHODS = [
+  'نقدی',
+  'کارت‌به‌کارت',
+  'کارت‌خوان',
+  'واریز بانکی',
+  'سایر'
+]
+
+function validateMoney(value: number, allowZero = false): void {
+  if (
+    !Number.isFinite(value) ||
+    (allowZero ? value < 0 : value <= 0)
+  ) {
+    throw new Error('مبلغ واردشده معتبر نیست.')
+  }
+}
+
+// ======================================
+// ایجاد جدول‌های تکمیلی
+// ======================================
 
 export async function ensureSalesExtensionsSchema(): Promise<void> {
   const db = await initializeDatabase()
@@ -62,6 +84,10 @@ export async function ensureSalesExtensionsSchema(): Promise<void> {
     );
   `)
 }
+
+// ======================================
+// مدیریت مشاوره‌ها
+// ======================================
 
 export async function getConsultations(): Promise<ConsultationRecord[]> {
   const db = await initializeDatabase()
@@ -102,7 +128,6 @@ export async function addConsultation(data: {
   followUpDate: string
 }): Promise<void> {
   const db = await initializeDatabase()
-
   const phone = data.phone.trim()
 
   if (!phone) {
@@ -113,12 +138,7 @@ export async function addConsultation(data: {
     throw new Error('نتیجه مشاوره معتبر نیست.')
   }
 
-  if (
-    !Number.isFinite(data.purchaseAmount) ||
-    data.purchaseAmount < 0
-  ) {
-    throw new Error('مبلغ خرید معتبر نیست.')
-  }
+  validateMoney(data.purchaseAmount, true)
 
   await db.run(
     `INSERT INTO consultations
@@ -154,22 +174,21 @@ export async function updateConsultation(
     throw new Error('شماره تماس را وارد کنید.')
   }
 
-  if (
-    !Number.isFinite(data.purchaseAmount) ||
-    data.purchaseAmount < 0
-  ) {
-    throw new Error('مبلغ خرید معتبر نیست.')
+  if (!['pending', 'purchased', 'not_purchased'].includes(data.result)) {
+    throw new Error('نتیجه مشاوره معتبر نیست.')
   }
 
+  validateMoney(data.purchaseAmount, true)
+
   await db.run(
-    `UPDATE consultations SET
-      name = ?,
-      phone = ?,
-      topic = ?,
-      notes = ?,
-      result = ?,
-      purchase_amount = ?,
-      follow_up_date = ?
+    `UPDATE consultations
+     SET name = ?,
+         phone = ?,
+         topic = ?,
+         notes = ?,
+         result = ?,
+         purchase_amount = ?,
+         follow_up_date = ?
      WHERE id = ?`,
     [
       data.name.trim(),
@@ -189,6 +208,10 @@ export async function deleteConsultation(id: number): Promise<void> {
   await db.run('DELETE FROM consultations WHERE id = ?', [id])
 }
 
+// ======================================
+// دریافت فهرست اقساط
+// ======================================
+
 export async function getInstallments(): Promise<InstallmentRecord[]> {
   const db = await initializeDatabase()
 
@@ -203,7 +226,11 @@ export async function getInstallments(): Promise<InstallmentRecord[]> {
       i.due_date AS dueDate,
       i.status,
       i.notes,
-      i.created_at AS createdAt
+      i.created_at AS createdAt,
+      CASE
+        WHEN i.amount - i.paid_amount < 0 THEN 0
+        ELSE i.amount - i.paid_amount
+      END AS remainingAmount
     FROM installments i
     LEFT JOIN customers c ON c.id = i.customer_id
     ORDER BY
@@ -217,9 +244,14 @@ export async function getInstallments(): Promise<InstallmentRecord[]> {
     customerName: row.customerName || 'مشتری حذف‌شده',
     amount: Number(row.amount || 0),
     paidAmount: Number(row.paidAmount || 0),
+    remainingAmount: Number(row.remainingAmount || 0),
     notes: row.notes || ''
   })) as InstallmentRecord[]
 }
+
+// ======================================
+// ثبت قسط جدید
+// ======================================
 
 export async function addInstallment(data: {
   customerId: number
@@ -239,18 +271,46 @@ export async function addInstallment(data: {
     throw new Error('مشتری یا سفارش معتبر نیست.')
   }
 
-  if (!Number.isFinite(data.amount) || data.amount <= 0) {
-    throw new Error('مبلغ قسط باید بیشتر از صفر باشد.')
-  }
+  validateMoney(data.amount)
 
   if (!data.dueDate) {
     throw new Error('تاریخ سررسید قسط را وارد کنید.')
   }
 
+  const orderResult = await db.query(
+    `SELECT id, customer_id, final_total, status
+     FROM orders
+     WHERE id = ?`,
+    [data.orderId]
+  )
+
+  const order = orderResult.values?.[0]
+
+  if (!order) {
+    throw new Error('سفارش موردنظر پیدا نشد.')
+  }
+
+  if (Number(order.customer_id) !== data.customerId) {
+    throw new Error('این سفارش متعلق به مشتری انتخاب‌شده نیست.')
+  }
+
+  if (order.status === 'لغو شده') {
+    throw new Error('برای سفارش لغوشده نمی‌توان قسط ثبت کرد.')
+  }
+
+  const customerResult = await db.query(
+    'SELECT id FROM customers WHERE id = ?',
+    [data.customerId]
+  )
+
+  if (!customerResult.values?.length) {
+    throw new Error('مشتری موردنظر پیدا نشد.')
+  }
+
   await db.run(
     `INSERT INTO installments
-     (customer_id, order_id, amount, due_date, notes)
-     VALUES (?, ?, ?, ?, ?)`,
+     (customer_id, order_id, amount, paid_amount, due_date, status, notes)
+     VALUES (?, ?, ?, 0, ?, 'pending', ?)`,
     [
       data.customerId,
       data.orderId,
@@ -259,4 +319,231 @@ export async function addInstallment(data: {
       data.notes.trim() || null
     ]
   )
+}
+
+// ======================================
+// ویرایش قسط
+// ======================================
+
+export async function updateInstallment(
+  id: number,
+  data: {
+    amount: number
+    dueDate: string
+    notes: string
+  }
+): Promise<void> {
+  const db = await initializeDatabase()
+
+  validateMoney(data.amount)
+
+  if (!data.dueDate) {
+    throw new Error('تاریخ سررسید قسط را وارد کنید.')
+  }
+
+  const result = await db.query(
+    `SELECT amount, paid_amount
+     FROM installments
+     WHERE id = ?`,
+    [id]
+  )
+
+  const installment = result.values?.[0]
+
+  if (!installment) {
+    throw new Error('قسط موردنظر پیدا نشد.')
+  }
+
+  const paidAmount = Number(installment.paid_amount || 0)
+
+  if (data.amount < paidAmount) {
+    throw new Error('مبلغ قسط نمی‌تواند کمتر از مبلغ دریافت‌شده باشد.')
+  }
+
+  const status = paidAmount >= data.amount ? 'paid' :
+    paidAmount > 0 ? 'partial' : 'pending'
+
+  await db.run(
+    `UPDATE installments
+     SET amount = ?,
+         due_date = ?,
+         notes = ?,
+         status = ?
+     WHERE id = ?`,
+    [
+      data.amount,
+      data.dueDate,
+      data.notes.trim() || null,
+      status,
+      id
+    ]
+  )
+}
+
+// ======================================
+// حذف قسط
+// ======================================
+
+export async function deleteInstallment(id: number): Promise<void> {
+  const db = await initializeDatabase()
+
+  const result = await db.query(
+    `SELECT paid_amount
+     FROM installments
+     WHERE id = ?`,
+    [id]
+  )
+
+  const installment = result.values?.[0]
+
+  if (!installment) {
+    throw new Error('قسط موردنظر پیدا نشد.')
+  }
+
+  if (Number(installment.paid_amount || 0) > 0) {
+    throw new Error(
+      'این قسط دریافت وجه دارد. برای حفظ سوابق مالی، حذف آن مجاز نیست.'
+    )
+  }
+
+  await db.run('DELETE FROM installments WHERE id = ?', [id])
+}
+
+// ======================================
+// ثبت دریافت واقعی بابت یک قسط
+// ======================================
+
+export async function recordInstallmentPayment(
+  installmentId: number,
+  amount: number,
+  method: string,
+  notes: string
+): Promise<void> {
+  const db = await initializeDatabase()
+
+  validateMoney(amount)
+
+  if (!PAYMENT_METHODS.includes(method)) {
+    throw new Error('روش پرداخت معتبر نیست.')
+  }
+
+  let transactionStarted = false
+
+  try {
+    await db.beginTransaction()
+    transactionStarted = true
+
+    const installmentResult = await db.query(
+      `SELECT
+        id,
+        customer_id,
+        order_id,
+        amount,
+        paid_amount,
+        status
+       FROM installments
+       WHERE id = ?`,
+      [installmentId]
+    )
+
+    const installment = installmentResult.values?.[0]
+
+    if (!installment) {
+      throw new Error('قسط موردنظر پیدا نشد.')
+    }
+
+    const customerId = Number(installment.customer_id)
+    const installmentAmount = Number(installment.amount || 0)
+    const paidAmount = Number(installment.paid_amount || 0)
+    const remainingInstallment = installmentAmount - paidAmount
+
+    if (remainingInstallment <= 0) {
+      throw new Error('این قسط قبلاً به‌طور کامل تسویه شده است.')
+    }
+
+    if (amount > remainingInstallment) {
+      throw new Error(
+        `مبلغ دریافت بیشتر از مانده قسط است. مانده قسط: ${Math.floor(remainingInstallment)} تومان`
+      )
+    }
+
+    const balanceResult = await db.query(
+      `SELECT
+        COALESCE((
+          SELECT SUM(final_total)
+          FROM orders
+          WHERE customer_id = ?
+            AND status != 'لغو شده'
+        ), 0) -
+        COALESCE((
+          SELECT SUM(amount)
+          FROM payments
+          WHERE customer_id = ?
+        ), 0) AS balance`,
+      [customerId, customerId]
+    )
+
+    const customerBalance = Number(
+      balanceResult.values?.[0]?.balance || 0
+    )
+
+    if (customerBalance <= 0) {
+      throw new Error('این مشتری بدهی پرداخت‌نشده ندارد.')
+    }
+
+    if (amount > customerBalance) {
+      throw new Error(
+        `مبلغ دریافت بیشتر از بدهی مشتری است. مانده بدهی: ${Math.floor(customerBalance)} تومان`
+      )
+    }
+
+    const newPaidAmount = paidAmount + amount
+
+    const newStatus =
+      newPaidAmount >= installmentAmount
+        ? 'paid'
+        : 'partial'
+
+    await db.run(
+      `INSERT INTO payments
+       (customer_id, amount, method, notes)
+       VALUES (?, ?, ?, ?)`,
+      [
+        customerId,
+        amount,
+        method,
+        notes.trim()
+          ? `دریافت بابت قسط شماره ${installmentId} - ${notes.trim()}`
+          : `دریافت بابت قسط شماره ${installmentId}`
+      ],
+      false
+    )
+
+    await db.run(
+      `UPDATE installments
+       SET paid_amount = ?,
+           status = ?
+       WHERE id = ?`,
+      [
+        newPaidAmount,
+        newStatus,
+        installmentId
+      ],
+      false
+    )
+
+    await db.commitTransaction()
+    transactionStarted = false
+
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        await db.rollbackTransaction()
+      } catch {
+        // حفظ خطای اصلی
+      }
+    }
+
+    throw error
+  }
 }
