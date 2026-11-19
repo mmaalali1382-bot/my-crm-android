@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from 'react'
 import {
   BarChart3,
@@ -323,7 +322,7 @@ export default function Reports() {
             onClick={async () => {
               try {
                 setError('')
-                await exportFinancialReport(orders, expenses)
+                await exportFinancialReport(orders, expenses, period)
               } catch (e) {
                 setError(
                   e instanceof Error
