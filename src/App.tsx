@@ -22,6 +22,7 @@ import Payments from './Payments'
 import Backup from './Backup'
 import FollowUps from './FollowUps'
 import NavigationDrawer from './NavigationDrawer'
+import CustomerManagement from './CustomerManagement'
 
 const emptyCustomerDetails: CustomerDetails = {
   alternatePhone: '',
@@ -602,42 +603,16 @@ export default function App() {
             </button>
           </div>
 
-          <label className="search">
-            <Search size={18} />
-            <input
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="جستجوی نام، موبایل یا شرکت"
+          {loading ? (
+            <p className="empty">در حال دریافت مشتری‌ها...</p>
+          ) : (
+            <CustomerManagement
+              customers={customers}
+              query={query}
+              onQueryChange={setQuery}
+              onEdit={openEditForm}
+              onDelete={removeCustomer}
             />
-          </label>
-
-          {loading && <p className="empty">در حال دریافت مشتری‌ها...</p>}
-
-          {!loading && filtered.map(c => (
-            <article className="customer customer-expanded" key={c.id}>
-              <button className="customer-main" onClick={() => openEditForm(c)}>
-                <div className="avatar">{c.name.slice(0, 1)}</div>
-                <div className="customer-info">
-                  <b>{c.name}</b>
-                  <small>{c.mobile}</small>
-                  {c.company && <small><Building2 size={12} /> {c.company}</small>}
-                  {c.notes && <small className="note-preview"><FileText size={12} /> {c.notes}</small>}
-                </div>
-                <span>{c.stage}</span>
-              </button>
-              <div className="customer-actions">
-                <button onClick={() => openEditForm(c)}>
-                  <Pencil size={16} /> ویرایش
-                </button>
-                <button onClick={() => removeCustomer(c)}>
-                  <Trash2 size={16} /> حذف
-                </button>
-              </div>
-            </article>
-          ))}
-
-          {!loading && !filtered.length && (
-            <p className="empty">مشتری‌ای پیدا نشد.</p>
           )}
         </main>
       )}
