@@ -1,9 +1,10 @@
+
 import { useEffect, useMemo, useState } from 'react'
 import {
   Users, Package, ClipboardList, Wallet, Plus, Search, Sparkles,
   Bell, ChevronLeft, Pencil, Trash2, X, Save, FileText, Building2,
   AlertTriangle, Boxes, ShoppingCart, Minus, CheckCircle, CalendarDays,
-  MessageCircle
+  MessageCircle, Target
 } from 'lucide-react'
 import {
   initializeDatabase, getCustomers, addCustomer as addCustomerToDb,
@@ -18,6 +19,7 @@ import {
   type CustomerDetails
 } from './db/customerDetails'
 import { ensureSalesExtensionsSchema } from './db/salesExtensions'
+import { getGoalSettings, saveGoalSettings } from './db/goals'
 import CustomerDetailsForm from './CustomerDetailsForm'
 import Payments from './Payments'
 import Backup from './Backup'
@@ -79,6 +81,18 @@ const statuses = [
   'لغو شده'
 ]
 
+function parseOrderDate(value: string): Date | null {
+  if (!value) return null
+
+  const normalized = value.includes('T')
+    ? value
+    : value.replace(' ', 'T') + 'Z'
+
+  const parsed = new Date(normalized)
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
 export default function App() {
   const [tab, setTab] = useState('خانه')
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -87,6 +101,13 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  const [monthlyTarget, setMonthlyTarget] = useState(500000000)
+  const [dailyTarget, setDailyTarget] = useState(0)
+  const [showGoalForm, setShowGoalForm] = useState(false)
+  const [goalMonthlyInput, setGoalMonthlyInput] = useState('500000000')
+  const [goalDailyInput, setGoalDailyInput] = useState('0')
+  const [savingGoals, setSavingGoals] = useState(false)
 
   const [query, setQuery] = useState('')
   const [productQuery, setProductQuery] = useState('')
@@ -152,6 +173,13 @@ export default function App() {
         await initializeDatabase()
         await ensureCustomerDetailsSchema()
         await ensureSalesExtensionsSchema()
+
+        const goals = await getGoalSettings()
+        setMonthlyTarget(goals.monthlyTarget)
+        setDailyTarget(goals.dailyTarget)
+        setGoalMonthlyInput(String(goals.monthlyTarget))
+        setGoalDailyInput(String(goals.dailyTarget))
+
         await refreshAll()
       } catch (err) {
         console.error(err)
@@ -182,6 +210,92 @@ export default function App() {
   const finalTotal = Math.max(0, cartTotal - discountValue)
 
   const selectedCustomer = customers.find(c => c.id === Number(orderCustomer))
+
+  const validOrders = orders.filter(o => o.status !== 'لغو شده')
+  const now = new Date()
+  const startOfToday = new Date(
+    now.getFullYear(), now.getMonth(), now.getDate()
+  )
+
+  const startOfWeek = new Date(startOfToday)
+  startOfWeek.setDate(
+    startOfWeek.getDate() - ((startOfWeek.getDay() + 6) % 7)
+  )
+
+  const startOfMonth = new Date(
+    now.getFullYear(), now.getMonth(), 1
+  )
+
+  function getSalesSince(startDate: Date) {
+    return validOrders.reduce((sum, order) => {
+      const orderDate = parseOrderDate(order.createdAt)
+
+      if (
+        orderDate &&
+        orderDate >= startDate &&
+        orderDate <= now
+      ) {
+        return sum + order.finalTotal
+      }
+
+      return sum
+    }, 0)
+  }
+
+  const todaySales = getSalesSince(startOfToday)
+  const weekSales = getSalesSince(startOfWeek)
+  const monthSales = getSalesSince(startOfMonth)
+
+  const dailyProgress = dailyTarget > 0
+    ? Math.min(100, (todaySales / dailyTarget) * 100)
+    : 0
+
+  const monthlyProgress = monthlyTarget > 0
+    ? Math.min(100, (monthSales / monthlyTarget) * 100)
+    : 0
+
+  async function saveGoals() {
+    const monthly = Number(goalMonthlyInput)
+    const daily = Number(goalDailyInput)
+
+    if (
+      !Number.isFinite(monthly) ||
+      !Number.isFinite(daily) ||
+      monthly < 0 ||
+      daily < 0 ||
+      !Number.isInteger(monthly) ||
+      !Number.isInteger(daily)
+    ) {
+      setError('هدف‌ها باید عدد صحیح و صفر یا بیشتر باشند.')
+      return
+    }
+
+    try {
+      setSavingGoals(true)
+      setError('')
+
+      await saveGoalSettings(monthly, daily)
+
+      setMonthlyTarget(monthly)
+      setDailyTarget(daily)
+      setShowGoalForm(false)
+    } catch (err) {
+      console.error(err)
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'ذخیره هدف‌های فروش انجام نشد.'
+      )
+    } finally {
+      setSavingGoals(false)
+    }
+  }
+
+  function openGoalForm() {
+    setGoalMonthlyInput(String(monthlyTarget))
+    setGoalDailyInput(String(dailyTarget))
+    setShowGoalForm(true)
+  }
 
   function openNewForm() {
     setEditing(null)
@@ -541,8 +655,116 @@ export default function App() {
           </section>
 
           <div className="section-title">
+            <h3>عملکرد فروش</h3>
+            <span>تومان</span>
+          </div>
+
+          <div className="stats">
+            <article>
+              <Wallet />
+              <strong>{loading ? '...' : money(todaySales)}</strong>
+              <small>فروش امروز</small>
+            </article>
+            <article>
+              <CalendarDays />
+              <strong>{loading ? '...' : money(weekSales)}</strong>
+              <small>فروش این هفته</small>
+            </article>
+            <article>
+              <Target />
+              <strong>{loading ? '...' : money(monthSales)}</strong>
+              <small>فروش این ماه</small>
+            </article>
+          </div>
+
+          <section className="assistant" style={{ marginTop: 14 }}>
+            <div className="assistant-head">
+              <Target />
+              <b>هدف‌گذاری فروش</b>
+              <button
+                onClick={openGoalForm}
+                style={{
+                  marginRight: 'auto',
+                  padding: '7px 10px',
+                  borderRadius: 8
+                }}
+              >
+                <Pencil size={15} /> ویرایش هدف‌ها
+              </button>
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 8,
+                marginBottom: 8
+              }}>
+                <b>هدف روزانه</b>
+                <small>
+                  {dailyTarget > 0
+                    ? `${money(todaySales)} از ${money(dailyTarget)} تومان`
+                    : 'هدف روزانه تعیین نشده'}
+                </small>
+              </div>
+
+              {dailyTarget > 0 && (
+                <>
+                  <div style={{
+                    height: 10,
+                    background: '#e5e9f2',
+                    borderRadius: 20,
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      width: `${dailyProgress}%`,
+                      height: '100%',
+                      background: '#315da8',
+                      borderRadius: 20
+                    }} />
+                  </div>
+                  <small style={{ display: 'block', marginTop: 6 }}>
+                    {money(Math.round(dailyProgress))}٪ از هدف روزانه
+                  </small>
+                </>
+              )}
+            </div>
+
+            <div style={{ marginTop: 18 }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 8,
+                marginBottom: 8
+              }}>
+                <b>هدف ماهانه</b>
+                <small>
+                  {money(monthSales)} از {money(monthlyTarget)} تومان
+                </small>
+              </div>
+
+              <div style={{
+                height: 10,
+                background: '#e5e9f2',
+                borderRadius: 20,
+                overflow: 'hidden'
+              }}>
+                <div style={{
+                  width: `${monthlyProgress}%`,
+                  height: '100%',
+                  background: '#315da8',
+                  borderRadius: 20
+                }} />
+              </div>
+              <small style={{ display: 'block', marginTop: 6 }}>
+                {money(Math.round(monthlyProgress))}٪ از هدف ماهانه
+              </small>
+            </div>
+          </section>
+
+          <div className="section-title" style={{ marginTop: 22 }}>
             <h3>نمای کلی</h3>
-            <span>امروز</span>
+            <span>وضعیت کسب‌وکار</span>
           </div>
 
           <div className="stats">
@@ -559,7 +781,7 @@ export default function App() {
             <article>
               <Wallet />
               <strong>
-                {money(orders.filter(o => o.status !== 'لغو شده').reduce((s, o) => s + o.finalTotal, 0))}
+                {money(validOrders.reduce((s, o) => s + o.finalTotal, 0))}
               </strong>
               <small>مجموع سفارش‌ها (تومان)</small>
             </article>
@@ -739,7 +961,7 @@ export default function App() {
             <article>
               <Wallet />
               <strong>
-                {money(orders.filter(o => o.status !== 'لغو شده').reduce((s, o) => s + o.finalTotal, 0))}
+                {money(validOrders.reduce((s, o) => s + o.finalTotal, 0))}
               </strong>
               <small>مجموع فروش (تومان)</small>
             </article>
@@ -804,6 +1026,58 @@ export default function App() {
       {tab === 'گزارش‌های مالی' && <Reports />}
 
       {tab === 'پشتیبان‌گیری' && <Backup />}
+
+      {showGoalForm && (
+        <div className="modal-backdrop" onClick={() => !savingGoals && setShowGoalForm(false)}>
+          <section className="modal customer-form" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">
+              <h3>تنظیم هدف‌های فروش</h3>
+              <button onClick={() => !savingGoals && setShowGoalForm(false)}>
+                <X />
+              </button>
+            </div>
+
+            <p className="empty">
+              مبلغ‌ها را به تومان وارد کن. برای حذف هدف روزانه، عدد صفر بگذار.
+            </p>
+
+            <label>
+              هدف فروش ماهانه (تومان)
+              <input
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                value={goalMonthlyInput}
+                onChange={e => setGoalMonthlyInput(e.target.value)}
+                placeholder="مثلاً 500000000"
+              />
+            </label>
+
+            <label>
+              هدف فروش روزانه (تومان)
+              <input
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                value={goalDailyInput}
+                onChange={e => setGoalDailyInput(e.target.value)}
+                placeholder="مثلاً 20000000"
+              />
+            </label>
+
+            <button
+              className="primary full"
+              onClick={saveGoals}
+              disabled={savingGoals}
+            >
+              <Save size={17} />
+              {savingGoals ? 'در حال ذخیره...' : 'ذخیره هدف‌ها'}
+            </button>
+          </section>
+        </div>
+      )}
 
       {showForm && (
         <div className="modal-backdrop" onClick={() => !saving && setShowForm(false)}>
