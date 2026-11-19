@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import {
   Menu, X, Home, Users, Package, ClipboardList,
   CalendarDays, Wallet, ShieldCheck, ChevronLeft,
-  Sun, Moon, Monitor
+  Sun, Moon, Monitor, MessageCircle
 } from 'lucide-react'
 
 type NavigationDrawerProps = {
@@ -16,6 +16,7 @@ type ThemeMode = 'light' | 'dark' | 'system'
 const items = [
   { label: 'خانه', icon: Home },
   { label: 'مشتریان', icon: Users },
+  { label: 'مشاوره‌ها', icon: MessageCircle },
   { label: 'محصولات', icon: Package },
   { label: 'سفارش‌ها', icon: ClipboardList },
   { label: 'پیگیری‌ها', icon: CalendarDays },
