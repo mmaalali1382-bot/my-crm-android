@@ -51,6 +51,122 @@ export async function ensureCustomerDetailsSchema(): Promise<void> {
   }
 }
 
+// آماده‌سازی جدول پیگیری‌ها و ستون تشخیص پیگیری خودکار
+async function ensureFollowUpSchema(): Promise<void> {
+  const db = await initializeDatabase()
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS follow_ups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      topic TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      source TEXT NOT NULL DEFAULT 'manual',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(customer_id) REFERENCES customers(id)
+    )
+  `)
+
+  const result = await db.query('PRAGMA table_info(follow_ups)')
+  const existingColumns = new Set(
+    (result.values || []).map((column: any) => column.name)
+  )
+
+  if (!existingColumns.has('source')) {
+    await db.execute(
+      "ALTER TABLE follow_ups ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'"
+    )
+  }
+}
+
+// هماهنگ‌سازی خودکار تاریخ پیگیری مشتری با بخش پیگیری‌ها
+async function syncCustomerFollowUp(
+  customerId: number,
+  followUpDate: string
+): Promise<void> {
+  const db = await initializeDatabase()
+
+  await ensureFollowUpSchema()
+
+  const existing = await db.query(
+    `SELECT id, due_date AS dueDate
+     FROM follow_ups
+     WHERE customer_id = ?
+       AND source = 'customer'
+       AND status = 'pending'
+     ORDER BY id DESC`,
+    [customerId]
+  )
+
+  const pendingItems = existing.values || []
+
+  // اگر تاریخ پیگیری پاک شده باشد، پیگیری خودکارِ باز حذف می‌شود
+  if (!followUpDate) {
+    await db.run(
+      `DELETE FROM follow_ups
+       WHERE customer_id = ?
+         AND source = 'customer'
+         AND status = 'pending'`,
+      [customerId]
+    )
+    return
+  }
+
+  // اگر قبلاً پیگیری خودکار باز وجود داشته باشد، همان را به‌روزرسانی می‌کنیم
+  if (pendingItems.length > 0) {
+    const mainId = Number(pendingItems[0].id)
+
+    await db.run(
+      `UPDATE follow_ups
+       SET due_date = ?, topic = ?
+       WHERE id = ?`,
+      [
+        followUpDate,
+        'پیگیری خودکار از فرم مشتری',
+        mainId
+      ]
+    )
+
+    // پاک‌سازی موارد خودکار تکراریِ باز، بدون دست‌زدن به پیگیری‌های دستی
+    for (const item of pendingItems.slice(1)) {
+      await db.run(
+        `DELETE FROM follow_ups
+         WHERE id = ? AND source = 'customer'`,
+        [Number(item.id)]
+      )
+    }
+
+    return
+  }
+
+  // اگر همین پیگیری قبلاً انجام شده، دوباره ساخته نشود
+  const completed = await db.query(
+    `SELECT id
+     FROM follow_ups
+     WHERE customer_id = ?
+       AND source = 'customer'
+       AND due_date = ?
+       AND status = 'done'
+     LIMIT 1`,
+    [customerId, followUpDate]
+  )
+
+  if (completed.values?.length) return
+
+  // ایجاد پیگیری جدید به‌صورت خودکار
+  await db.run(
+    `INSERT INTO follow_ups
+     (customer_id, topic, due_date, status, source)
+     VALUES (?, ?, ?, 'pending', 'customer')`,
+    [
+      customerId,
+      'پیگیری خودکار از فرم مشتری',
+      followUpDate
+    ]
+  )
+}
+
 // دریافت اطلاعات تکمیلی یک مشتری
 export async function getCustomerDetails(
   customerId: number
@@ -98,7 +214,7 @@ export async function getCustomerDetails(
   }
 }
 
-// ذخیره یا ویرایش اطلاعات تکمیلی مشتری
+// ذخیره اطلاعات مشتری و هماهنگ‌سازی خودکار پیگیری
 export async function saveCustomerDetails(
   customerId: number,
   details: CustomerDetails
@@ -143,4 +259,6 @@ export async function saveCustomerDetails(
       customerId
     ]
   )
+
+  await syncCustomerFollowUp(customerId, details.followUpDate)
 }
