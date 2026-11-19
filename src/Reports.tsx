@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from 'react'
 import {
   BarChart3,
@@ -19,7 +20,10 @@ import {
   type OrderRecord,
   type ExpenseRecord
 } from './db/database'
-import { exportFinancialReport } from './reportExport'
+import {
+  exportFinancialReport,
+  exportFinancialReportExcel
+} from './reportExport'
 
 type Period = 'today' | 'week' | 'month' | 'all'
 
@@ -316,7 +320,7 @@ export default function Reports() {
           <h2>گزارش‌های مالی و سود</h2>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <button
             className="primary compact"
             onClick={async () => {
@@ -335,6 +339,26 @@ export default function Reports() {
           >
             خروجی CSV
           </button>
+
+          <button
+            className="primary compact"
+            onClick={async () => {
+              try {
+                setError('')
+                await exportFinancialReportExcel(orders, expenses, period)
+              } catch (e) {
+                setError(
+                  e instanceof Error
+                    ? e.message
+                    : 'خروجی اکسل گزارش مالی انجام نشد.'
+                )
+              }
+            }}
+            disabled={loading}
+          >
+            خروجی Excel
+          </button>
+
           <button
             className="icon-btn"
             onClick={refresh}
