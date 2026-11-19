@@ -17,10 +17,12 @@ import {
   saveCustomerDetails,
   type CustomerDetails
 } from './db/customerDetails'
+import { ensureSalesExtensionsSchema } from './db/salesExtensions'
 import CustomerDetailsForm from './CustomerDetailsForm'
 import Payments from './Payments'
 import Backup from './Backup'
 import FollowUps from './FollowUps'
+import Consultations from './Consultations'
 import NavigationDrawer from './NavigationDrawer'
 import CustomerManagement from './CustomerManagement'
 
@@ -148,6 +150,7 @@ export default function App() {
       try {
         await initializeDatabase()
         await ensureCustomerDetailsSchema()
+        await ensureSalesExtensionsSchema()
         await refreshAll()
       } catch (err) {
         console.error(err)
@@ -587,6 +590,9 @@ export default function App() {
             <button onClick={() => setTab('پیگیری‌ها')}>
               <CalendarDays /> پیگیری مشتریان <ChevronLeft />
             </button>
+            <button onClick={() => setTab('مشاوره‌ها')}>
+              <MessageCircle /> مشاوره‌ها <ChevronLeft />
+            </button>
           </section>
         </main>
       )}
@@ -776,6 +782,8 @@ export default function App() {
       )}
 
       {tab === 'پیگیری‌ها' && <FollowUps />}
+
+      {tab === 'مشاوره‌ها' && <Consultations />}
 
       {tab === 'پرداخت‌ها' && <Payments />}
 
