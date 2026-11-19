@@ -526,11 +526,86 @@ export async function updateOrderStatus(
   }
 
   const d = await initializeDatabase();
+  let transactionStarted = false;
 
-  await d.run(
-    'UPDATE orders SET status=? WHERE id=?',
-    [status, id]
-  );
+  try {
+    await d.beginTransaction();
+    transactionStarted = true;
+
+    const orderResult = await d.query(
+      'SELECT id,status FROM orders WHERE id=?',
+      [id]
+    );
+
+    const order = orderResult.values?.[0] as
+      | { id: number; status: string }
+      | undefined;
+
+    if (!order) {
+      throw new Error('سفارش پیدا نشد.');
+    }
+
+    if (order.status === 'لغو شده') {
+      if (status !== 'لغو شده') {
+        throw new Error(
+          'سفارش لغوشده قابل فعال‌سازی مجدد نیست. برای فروش مجدد، سفارش جدید ثبت کنید.'
+        );
+      }
+
+      await d.commitTransaction();
+      transactionStarted = false;
+      return;
+    }
+
+    if (status === 'لغو شده') {
+      const itemsResult = await d.query(
+        `SELECT product_id AS productId, quantity
+         FROM order_items
+         WHERE order_id=?`,
+        [id]
+      );
+
+      const items = (itemsResult.values || []) as {
+        productId: number;
+        quantity: number;
+      }[];
+
+      for (const item of items) {
+        const quantity = Number(item.quantity || 0);
+        const productId = Number(item.productId || 0);
+
+        if (quantity <= 0 || productId <= 0) continue;
+
+        await d.run(
+          `UPDATE products
+           SET stock = stock + ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [quantity, productId],
+          false
+        );
+      }
+    }
+
+    await d.run(
+      'UPDATE orders SET status=? WHERE id=?',
+      [status, id],
+      false
+    );
+
+    await d.commitTransaction();
+    transactionStarted = false;
+
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        await d.rollbackTransaction();
+      } catch {
+        // حفظ خطای اصلی
+      }
+    }
+
+    throw error;
+  }
 }
 
 // محاسبه مانده حساب هر مشتری
@@ -855,6 +930,7 @@ export async function deleteExpense(id: number): Promise<void> {
 
   await d.run('DELETE FROM expenses WHERE id=?', [id]);
 }
+
 // ================================
 // پشتیبان‌گیری و بازیابی دیتابیس
 // ================================
