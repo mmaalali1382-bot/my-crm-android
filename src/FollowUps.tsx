@@ -1,8 +1,9 @@
 
 import { useEffect, useState } from 'react'
-import { CalendarDays, CheckCircle, Clock, Plus, Trash2 } from 'lucide-react'
+import { CalendarDays, CheckCircle, Plus, Trash2 } from 'lucide-react'
 import { initializeDatabase, getCustomers } from './db/database'
 import type { CustomerRecord } from './db/database'
+import { syncFollowUpNotifications } from './notifications'
 
 type FollowUpRecord = {
   id: number
@@ -69,8 +70,12 @@ export default function FollowUps() {
         `)
       ])
 
+      const records = (result.values || []) as FollowUpRecord[]
+
       setCustomers(customerList)
-      setItems((result.values || []) as FollowUpRecord[])
+      setItems(records)
+
+      await syncFollowUpNotifications(records)
     } catch (e) {
       console.error(e)
       setError('دریافت اطلاعات پیگیری‌ها انجام نشد.')
@@ -306,7 +311,7 @@ export default function FollowUps() {
                     background: '#fff0f0', color: '#b42318'
                   }}
                 >
-                  <Trash2 size={15} />
+                  <Trash2 size={17} />
                 </button>
               </div>
             </article>
