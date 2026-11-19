@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from 'react'
 import {
   Users, Package, ClipboardList, Wallet, Plus, Search, Sparkles,
@@ -472,21 +471,34 @@ export default function App() {
   async function changeStatus(order: OrderRecord, status: string) {
     if (order.status === status) return
 
+    if (order.status === 'لغو شده' && status !== 'لغو شده') {
+      setError(
+        'سفارش لغوشده قابل فعال‌سازی مجدد نیست. برای فروش مجدد، سفارش جدید ثبت کن.'
+      )
+      return
+    }
+
     if (status === 'لغو شده') {
       const ok = window.confirm(
-        `وضعیت سفارش شماره ${money(order.id)} لغو شود؟\n` +
-        `توجه: موجودی انبار به‌صورت خودکار برگردانده نمی‌شود.`
+        `آیا سفارش شماره ${money(order.id)} لغو شود؟\n\n` +
+        `با تأیید لغو، موجودی تمام محصولات این سفارش به‌صورت خودکار به انبار برمی‌گردد.\n\n` +
+        `این عملیات قابل برگشت نیست.`
       )
 
       if (!ok) return
     }
 
     try {
+      setError('')
       await updateOrderStatus(order.id, status)
-      await loadOrders()
+      await Promise.all([loadOrders(), loadProducts()])
     } catch (err) {
       console.error(err)
-      setError('تغییر وضعیت سفارش انجام نشد.')
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'تغییر وضعیت سفارش انجام نشد.'
+      )
     }
   }
 
