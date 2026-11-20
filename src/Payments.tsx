@@ -11,7 +11,8 @@ import {
   Trash2,
   CheckCircle,
   X,
-  Coins
+  Coins,
+  RotateCcw
 } from 'lucide-react'
 
 import {
@@ -32,6 +33,14 @@ import {
   recordInstallmentPayment,
   type InstallmentRecord
 } from './db/salesExtensions'
+
+import {
+  getRefunds,
+  getCustomerCredits,
+  settleCanceledOrder,
+  type RefundRecord,
+  type CustomerCreditRecord
+} from './db/refunds'
 
 const money = (n: number) =>
   new Intl.NumberFormat('fa-IR').format(Math.round(n || 0))
@@ -71,6 +80,8 @@ export default function Payments() {
   const [payments, setPayments] = useState<PaymentRecord[]>([])
   const [orders, setOrders] = useState<OrderRecord[]>([])
   const [installments, setInstallments] = useState<InstallmentRecord[]>([])
+  const [refunds, setRefunds] = useState<RefundRecord[]>([])
+  const [credits, setCredits] = useState<CustomerCreditRecord[]>([])
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -82,6 +93,14 @@ export default function Payments() {
   const [amount, setAmount] = useState('')
   const [method, setMethod] = useState('نقدی')
   const [notes, setNotes] = useState('')
+
+  // تسویه سفارش لغوشده
+  const [settlementOrderId, setSettlementOrderId] = useState('')
+  const [settlementPaidAmount, setSettlementPaidAmount] = useState('')
+  const [settlementRefundAmount, setSettlementRefundAmount] = useState('')
+  const [settlementCreditAmount, setSettlementCreditAmount] = useState('')
+  const [settlementMethod, setSettlementMethod] = useState('نقدی')
+  const [settlementNotes, setSettlementNotes] = useState('')
 
   // ثبت و ویرایش قسط
   const [installmentCustomerId, setInstallmentCustomerId] = useState('')
@@ -101,17 +120,28 @@ export default function Payments() {
     try {
       setLoading(true)
 
-      const [b, p, o, i] = await Promise.all([
+      const [
+        b,
+        p,
+        o,
+        i,
+        r,
+        c
+      ] = await Promise.all([
         getCustomerBalances(),
         getPayments(),
         getOrders(),
-        getInstallments()
+        getInstallments(),
+        getRefunds(),
+        getCustomerCredits()
       ])
 
       setBalances(b)
       setPayments(p)
       setOrders(o)
       setInstallments(i)
+      setRefunds(r)
+      setCredits(c)
     } catch (e) {
       setError(
         e instanceof Error
@@ -147,6 +177,30 @@ export default function Payments() {
     x => x.id === Number(installmentOrderId)
   )
 
+  const canceledOrders = useMemo(
+    () => orders.filter(x => x.status === 'لغو شده'),
+    [orders]
+  )
+
+  const selectedSettlementOrder = orders.find(
+    x => x.id === Number(settlementOrderId)
+  )
+
+  const settlementCustomerPayments = selectedSettlementOrder
+    ? payments
+        .filter(p => p.customerId === selectedSettlementOrder.customerId)
+        .reduce((sum, p) => sum + p.amount, 0)
+    : 0
+
+  const settlementPaidValue = Number(settlementPaidAmount) || 0
+  const settlementRefundValue = Number(settlementRefundAmount) || 0
+  const settlementCreditValue = Number(settlementCreditAmount) || 0
+
+  const settlementDifference =
+    settlementPaidValue -
+    settlementRefundValue -
+    settlementCreditValue
+
   const totalDebt = balances.reduce(
     (s, x) => s + Math.max(0, x.balance),
     0
@@ -164,6 +218,16 @@ export default function Payments() {
 
   const openInstallments = installments.filter(
     x => x.status !== 'paid'
+  )
+
+  const totalRefunded = refunds.reduce(
+    (sum, item) => sum + item.amount,
+    0
+  )
+
+  const totalAvailableCredit = credits.reduce(
+    (sum, item) => sum + item.remainingAmount,
+    0
   )
 
   async function submitPayment() {
@@ -213,6 +277,101 @@ export default function Payments() {
         e instanceof Error
           ? e.message
           : 'ثبت پرداخت انجام نشد.'
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function submitSettlement() {
+    if (!selectedSettlementOrder) {
+      setError('ابتدا سفارش لغوشده را انتخاب کن.')
+      return
+    }
+
+    if (selectedSettlementOrder.status !== 'لغو شده') {
+      setError('این سفارش لغو نشده است.')
+      return
+    }
+
+    const paid = Number(settlementPaidAmount)
+    const refund = Number(settlementRefundAmount || 0)
+    const credit = Number(settlementCreditAmount || 0)
+
+    if (
+      !Number.isSafeInteger(paid) ||
+      !Number.isSafeInteger(refund) ||
+      !Number.isSafeInteger(credit) ||
+      paid < 0 ||
+      refund < 0 ||
+      credit < 0
+    ) {
+      setError('مبالغ باید عدد صحیح و صفر یا بیشتر باشند.')
+      return
+    }
+
+    if (refund + credit !== paid) {
+      setError(
+        'مجموع بازپرداخت نقدی و اعتبار باید دقیقاً برابر مبلغ پرداخت‌شده باشد.'
+      )
+      return
+    }
+
+    if (refund > 0 && !settlementMethod.trim()) {
+      setError('روش بازپرداخت را انتخاب کن.')
+      return
+    }
+
+    if (paid > settlementCustomerPayments) {
+      setError(
+        'مبلغ واردشده از مجموع پرداخت‌های ثبت‌شده این مشتری بیشتر است. فقط مبلغ مربوط به همین سفارش را وارد کن.'
+      )
+      return
+    }
+
+    const customerName = selectedSettlementOrder.customerName
+
+    const confirmed = window.confirm(
+      `تأیید تسویه سفارش لغوشده؟\n\n` +
+      `شماره سفارش: ${money(selectedSettlementOrder.id)}\n` +
+      `مشتری: ${customerName}\n` +
+      `مبلغ پرداخت‌شده مربوط به این سفارش: ${money(paid)} تومان\n` +
+      `بازپرداخت نقدی: ${money(refund)} تومان\n` +
+      `اعتبار مشتری: ${money(credit)} تومان\n\n` +
+      `این عملیات فقط یک‌بار برای هر سفارش قابل ثبت است.`
+    )
+
+    if (!confirmed) return
+
+    try {
+      setSaving(true)
+      setError('')
+      setSuccess('')
+
+      await settleCanceledOrder({
+        customerId: selectedSettlementOrder.customerId,
+        orderId: selectedSettlementOrder.id,
+        paidAmount: paid,
+        refundAmount: refund,
+        creditAmount: credit,
+        refundMethod: settlementMethod,
+        notes: settlementNotes
+      })
+
+      setSettlementOrderId('')
+      setSettlementPaidAmount('')
+      setSettlementRefundAmount('')
+      setSettlementCreditAmount('')
+      setSettlementMethod('نقدی')
+      setSettlementNotes('')
+
+      await refresh()
+      setSuccess('تسویه سفارش لغوشده با موفقیت ثبت شد.')
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : 'ثبت تسویه انجام نشد.'
       )
     } finally {
       setSaving(false)
@@ -463,6 +622,18 @@ export default function Payments() {
           <strong>{money(totalPaid)}</strong>
           <small>مجموع پرداختی‌ها (تومان)</small>
         </article>
+
+        <article>
+          <RotateCcw/>
+          <strong>{money(totalRefunded)}</strong>
+          <small>مجموع بازپرداخت‌ها (تومان)</small>
+        </article>
+
+        <article>
+          <Coins/>
+          <strong>{money(totalAvailableCredit)}</strong>
+          <small>اعتبار استفاده‌نشده مشتریان (تومان)</small>
+        </article>
       </div>
 
       {/* دریافت عادی وجه */}
@@ -578,6 +749,253 @@ export default function Payments() {
           <Wallet size={17}/>
           {saving ? 'در حال ثبت...' : 'تأیید و ثبت پرداخت'}
         </button>
+      </section>
+
+      {/* تسویه سفارش لغوشده */}
+
+      <div className="section-title" style={{ marginTop: 24 }}>
+        <h3>
+          <RotateCcw size={18}/>
+          بازپرداخت و اعتبار مشتری
+        </h3>
+      </div>
+
+      <section className="assistant" style={{ marginBottom: 16 }}>
+        <div className="assistant-head">
+          <Coins/>
+          <b>تسویه سفارش لغوشده</b>
+        </div>
+
+        <p style={{ fontSize: 13, lineHeight: 1.9, color: '#536b9a' }}>
+          سفارش لغوشده را انتخاب کن. سپس مشخص کن چه مقدار از پرداخت‌های مشتری مربوط به همین سفارش بوده و آن مبلغ را بین بازپرداخت نقدی و اعتبار مشتری تقسیم کن.
+        </p>
+
+        <label style={{ display: 'block', marginTop: 12 }}>
+          انتخاب سفارش لغوشده
+
+          <select
+            value={settlementOrderId}
+            onChange={e => {
+              setSettlementOrderId(e.target.value)
+              setSettlementPaidAmount('')
+              setSettlementRefundAmount('')
+              setSettlementCreditAmount('')
+              setSettlementNotes('')
+            }}
+            style={{
+              width: '100%',
+              padding: 12,
+              marginTop: 6,
+              borderRadius: 10,
+              border: '1px solid #ccc'
+            }}
+          >
+            <option value="">انتخاب سفارش...</option>
+
+            {canceledOrders.map(x => (
+              <option key={x.id} value={x.id}>
+                سفارش #{money(x.id)} - {x.customerName} - {money(x.finalTotal)} تومان
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {selectedSettlementOrder && (
+          <>
+            <div
+              style={{
+                marginTop: 12,
+                padding: 12,
+                background: '#f4f6fb',
+                borderRadius: 10,
+                display: 'grid',
+                gap: 7
+              }}
+            >
+              <b>{selectedSettlementOrder.customerName}</b>
+              <small>
+                مبلغ نهایی سفارش: {money(selectedSettlementOrder.finalTotal)} تومان
+              </small>
+              <small>
+                مجموع پرداخت‌های ثبت‌شده این مشتری: {money(settlementCustomerPayments)} تومان
+              </small>
+              <small style={{ color: '#a36b20', lineHeight: 1.8 }}>
+                چون پرداخت‌های قبلی به سفارش خاصی متصل نیستند، مبلغ مربوط به این سفارش را خودت مشخص کن. مبلغ واردشده نباید از پرداخت‌های ثبت‌شده مشتری بیشتر باشد.
+              </small>
+            </div>
+
+            <label style={{ display: 'block', marginTop: 12 }}>
+              مبلغ پرداخت‌شده مربوط به این سفارش (تومان)
+
+              <input
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                value={settlementPaidAmount}
+                onChange={e => setSettlementPaidAmount(e.target.value)}
+                placeholder="مبلغی که مشتری قبلاً پرداخت کرده"
+                style={{
+                  width: '100%',
+                  padding: 12,
+                  marginTop: 6,
+                  borderRadius: 10,
+                  border: '1px solid #ccc',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </label>
+
+            <label style={{ display: 'block', marginTop: 12 }}>
+              مبلغ بازپرداخت نقدی (تومان)
+
+              <input
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                value={settlementRefundAmount}
+                onChange={e => setSettlementRefundAmount(e.target.value)}
+                placeholder="مثلاً ۵۰۰۰۰۰"
+                style={{
+                  width: '100%',
+                  padding: 12,
+                  marginTop: 6,
+                  borderRadius: 10,
+                  border: '1px solid #ccc',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </label>
+
+            {settlementRefundValue > 0 && (
+              <label style={{ display: 'block', marginTop: 12 }}>
+                روش بازپرداخت
+
+                <select
+                  value={settlementMethod}
+                  onChange={e => setSettlementMethod(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: 12,
+                    marginTop: 6,
+                    borderRadius: 10,
+                    border: '1px solid #ccc'
+                  }}
+                >
+                  {methods.map(x => (
+                    <option key={x} value={x}>{x}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            <label style={{ display: 'block', marginTop: 12 }}>
+              مبلغ اعتبار مشتری (تومان)
+
+              <input
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                value={settlementCreditAmount}
+                onChange={e => setSettlementCreditAmount(e.target.value)}
+                placeholder="مبلغی که برای خرید بعدی می‌ماند"
+                style={{
+                  width: '100%',
+                  padding: 12,
+                  marginTop: 6,
+                  borderRadius: 10,
+                  border: '1px solid #ccc',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </label>
+
+            <div
+              style={{
+                marginTop: 12,
+                padding: 12,
+                background: '#f4f6fb',
+                borderRadius: 10,
+                display: 'grid',
+                gap: 8
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>مبلغ پرداخت‌شده</span>
+                <b>{money(settlementPaidValue)} تومان</b>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>بازپرداخت نقدی</span>
+                <b>{money(settlementRefundValue)} تومان</b>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>اعتبار مشتری</span>
+                <b>{money(settlementCreditValue)} تومان</b>
+              </div>
+
+              <div
+                style={{
+                  borderTop: '1px solid #d8deeb',
+                  paddingTop: 9,
+                  display: 'flex',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <b>اختلاف مبالغ</b>
+                <b style={{
+                  color: settlementDifference === 0 ? '#16834b' : '#a33c48'
+                }}>
+                  {money(settlementDifference)} تومان
+                </b>
+              </div>
+            </div>
+
+            <label style={{ display: 'block', marginTop: 12 }}>
+              توضیحات (اختیاری)
+
+              <textarea
+                rows={2}
+                value={settlementNotes}
+                onChange={e => setSettlementNotes(e.target.value)}
+                placeholder="توضیحات تسویه..."
+                style={{
+                  width: '100%',
+                  padding: 12,
+                  marginTop: 6,
+                  borderRadius: 10,
+                  border: '1px solid #ccc',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </label>
+
+            <button
+              className="primary full"
+              onClick={submitSettlement}
+              disabled={
+                saving ||
+                !settlementPaidAmount ||
+                !settlementRefundAmount &&
+                  !settlementCreditAmount ||
+                settlementDifference !== 0
+              }
+              style={{ marginTop: 14 }}
+            >
+              <CheckCircle size={17}/>
+              {saving ? 'در حال ثبت تسویه...' : 'تأیید و ثبت تسویه'}
+            </button>
+          </>
+        )}
+
+        {!canceledOrders.length && (
+          <p className="empty">
+            در حال حاضر سفارش لغوشده‌ای برای تسویه وجود ندارد.
+          </p>
+        )}
       </section>
 
       {/* مدیریت اقساط */}
@@ -977,47 +1395,150 @@ export default function Payments() {
         </h3>
       </div>
 
-      {!loading && balances.map(x => (
-        <article
-          className="customer customer-expanded"
-          key={x.customerId}
-        >
-          <div className="customer-main">
-            <div className="avatar">
-              <Wallet size={19}/>
-            </div>
+      {!loading && balances.map(x => {
+        const customerCredit = credits
+          .filter(item => item.customerId === x.customerId)
+          .reduce((sum, item) => sum + item.remainingAmount, 0)
 
-            <div className="customer-info">
-              <b>{x.customerName}</b>
-              <small>{x.phone}</small>
-              <small>
-                مجموع سفارش‌ها: {money(x.totalOrders)} تومان
-              </small>
-              <small>
-                پرداخت‌شده: {money(x.totalPaid)} تومان
-              </small>
+        return (
+          <article
+            className="customer customer-expanded"
+            key={x.customerId}
+          >
+            <div className="customer-main">
+              <div className="avatar">
+                <Wallet size={19}/>
+              </div>
 
-              <b
-                style={{
-                  color: x.balance > 0
-                    ? '#a33c48'
-                    : '#16834b'
-                }}
-              >
-                {x.balance > 0
-                  ? `بدهی: ${money(x.balance)} تومان`
-                  : x.balance < 0
-                    ? `بستانکاری: ${money(Math.abs(x.balance))} تومان`
-                    : 'تسویه شده'}
-              </b>
+              <div className="customer-info">
+                <b>{x.customerName}</b>
+                <small>{x.phone}</small>
+                <small>
+                  مجموع سفارش‌ها: {money(x.totalOrders)} تومان
+                </small>
+                <small>
+                  پرداخت‌شده: {money(x.totalPaid)} تومان
+                </small>
+
+                <b
+                  style={{
+                    color: x.balance > 0
+                      ? '#a33c48'
+                      : '#16834b'
+                  }}
+                >
+                  {x.balance > 0
+                    ? `بدهی: ${money(x.balance)} تومان`
+                    : x.balance < 0
+                      ? `بستانکاری: ${money(Math.abs(x.balance))} تومان`
+                      : 'تسویه شده'}
+                </b>
+
+                {customerCredit > 0 && (
+                  <b style={{ color: '#315da8' }}>
+                    اعتبار قابل استفاده: {money(customerCredit)} تومان
+                  </b>
+                )}
+              </div>
             </div>
-          </div>
-        </article>
-      ))}
+          </article>
+        )
+      })}
 
       {!loading && !balances.length && (
         <p className="empty">
           هنوز مشتری‌ای ثبت نشده است.
+        </p>
+      )}
+
+      {/* تاریخچه بازپرداخت‌ها */}
+
+      <div className="section-title" style={{ marginTop: 24 }}>
+        <h3>
+          <RotateCcw size={18}/>
+          تاریخچه بازپرداخت‌ها
+        </h3>
+      </div>
+
+      {refunds.map(item => {
+        const customer = balances.find(
+          x => x.customerId === item.customerId
+        )
+
+        return (
+          <article
+            className="customer customer-expanded"
+            key={item.id}
+          >
+            <div className="customer-main">
+              <div className="avatar">
+                <RotateCcw size={19}/>
+              </div>
+
+              <div className="customer-info">
+                <b>{customer?.customerName || `مشتری ${money(item.customerId)}`}</b>
+                <strong style={{ color: '#a33c48' }}>
+                  {money(item.amount)} تومان
+                </strong>
+                <small>شماره سفارش: {item.orderId ? money(item.orderId) : '—'}</small>
+                <small>روش بازپرداخت: {item.method}</small>
+                <small>تاریخ: {item.createdAt}</small>
+                {item.notes && <small>توضیحات: {item.notes}</small>}
+              </div>
+            </div>
+          </article>
+        )
+      })}
+
+      {!loading && !refunds.length && (
+        <p className="empty">
+          هنوز بازپرداختی ثبت نشده است.
+        </p>
+      )}
+
+      {/* تاریخچه اعتبار مشتریان */}
+
+      <div className="section-title" style={{ marginTop: 24 }}>
+        <h3>
+          <Coins size={18}/>
+          اعتبار مشتریان
+        </h3>
+      </div>
+
+      {credits.map(item => {
+        const customer = balances.find(
+          x => x.customerId === item.customerId
+        )
+
+        return (
+          <article
+            className="customer customer-expanded"
+            key={item.id}
+          >
+            <div className="customer-main">
+              <div className="avatar">
+                <Coins size={19}/>
+              </div>
+
+              <div className="customer-info">
+                <b>{customer?.customerName || `مشتری ${money(item.customerId)}`}</b>
+                <small>اعتبار اولیه: {money(item.amount)} تومان</small>
+                <small>مصرف‌شده: {money(item.usedAmount)} تومان</small>
+                <b style={{ color: '#315da8' }}>
+                  اعتبار باقی‌مانده: {money(item.remainingAmount)} تومان
+                </b>
+                <small>شماره سفارش مبدأ: {item.orderId ? money(item.orderId) : '—'}</small>
+                <small>تاریخ ثبت: {item.createdAt}</small>
+                {item.notes && <small>توضیحات: {item.notes}</small>}
+              </div>
+            </div>
+          </article>
+        )
+      })}
+
+      {!loading && !credits.length && (
+        <p className="empty">
+          هنوز اعتباری برای مشتریان ثبت نشده است.
         </p>
       )}
 
