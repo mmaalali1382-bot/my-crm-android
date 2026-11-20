@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from 'react'
 import {
   Users, Package, ClipboardList, Wallet, Plus, Search, Sparkles,
@@ -21,7 +20,7 @@ import {
 import { ensureSalesExtensionsSchema } from './db/salesExtensions'
 import { getGoalSettings, saveGoalSettings } from './db/goals'
 import CustomerDetailsForm from './CustomerDetailsForm'
-import Payments from './Payments'
+import PaymentsPage from './PaymentsPage'
 import Backup from './Backup'
 import FollowUps from './FollowUps'
 import Consultations from './Consultations'
@@ -998,7 +997,7 @@ export default function App() {
                     style={{ padding: 8, borderRadius: 8, border: '1px solid #ccc', maxWidth: 170 }}
                   >
                     {statuses.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                                      </select>
                 </label>
               </div>
             </article>
@@ -1021,7 +1020,7 @@ export default function App() {
 
       {tab === 'مشاوره‌ها' && <Consultations />}
 
-      {tab === 'پرداخت‌ها' && <Payments />}
+      {tab === 'پرداخت‌ها' && <PaymentsPage />}
 
       {tab === 'گزارش‌های مالی' && <Reports />}
 
