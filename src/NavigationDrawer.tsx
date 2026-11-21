@@ -1,9 +1,8 @@
-
 import { useEffect, useState } from 'react'
 import {
   Menu, X, Home, Users, Package, ClipboardList,
   CalendarDays, Wallet, ShieldCheck, ChevronLeft,
-  Sun, Moon, Monitor, MessageCircle, BarChart3
+  Sun, Moon, Monitor, MessageCircle, BarChart3, Sparkles
 } from 'lucide-react'
 
 type NavigationDrawerProps = {
@@ -15,6 +14,7 @@ type ThemeMode = 'light' | 'dark' | 'system'
 
 const items = [
   { label: 'خانه', icon: Home },
+  { label: 'دستیار ثبت', icon: Sparkles },
   { label: 'مشتریان', icon: Users },
   { label: 'مشاوره‌ها', icon: MessageCircle },
   { label: 'محصولات', icon: Package },
