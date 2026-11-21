@@ -27,7 +27,7 @@ import Consultations from './Consultations'
 import Reports from './Reports'
 import NavigationDrawer from './NavigationDrawer'
 import CustomerManagement from './CustomerManagement'
-
+import SmartEntry from './SmartEntry'
 const emptyCustomerDetails: CustomerDetails = {
   alternatePhone: '',
   city: '',
