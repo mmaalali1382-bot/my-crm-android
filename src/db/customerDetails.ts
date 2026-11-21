@@ -1,9 +1,9 @@
-
 import { initializeDatabase } from './database'
 
 export type CustomerDetails = {
   alternatePhone: string
   city: string
+  address: string
   job: string
   customerType: string
   leadSource: string
@@ -20,6 +20,7 @@ export type CustomerDetails = {
 const columns: Record<string, string> = {
   alternate_phone: 'TEXT',
   city: 'TEXT',
+  address: 'TEXT',
   job: 'TEXT',
   customer_type: "TEXT DEFAULT 'عادی'",
   lead_source: 'TEXT',
@@ -33,7 +34,6 @@ const columns: Record<string, string> = {
   follow_up_date: 'TEXT'
 }
 
-// افزودن ستون‌های جدید بدون حذف اطلاعات قبلی
 export async function ensureCustomerDetailsSchema(): Promise<void> {
   const db = await initializeDatabase()
 
@@ -51,7 +51,6 @@ export async function ensureCustomerDetailsSchema(): Promise<void> {
   }
 }
 
-// آماده‌سازی جدول پیگیری‌ها و ستون تشخیص پیگیری خودکار
 async function ensureFollowUpSchema(): Promise<void> {
   const db = await initializeDatabase()
 
@@ -80,7 +79,6 @@ async function ensureFollowUpSchema(): Promise<void> {
   }
 }
 
-// هماهنگ‌سازی خودکار تاریخ پیگیری مشتری با بخش پیگیری‌ها
 async function syncCustomerFollowUp(
   customerId: number,
   followUpDate: string
@@ -101,7 +99,6 @@ async function syncCustomerFollowUp(
 
   const pendingItems = existing.values || []
 
-  // اگر تاریخ پیگیری پاک شده باشد، پیگیری خودکارِ باز حذف می‌شود
   if (!followUpDate) {
     await db.run(
       `DELETE FROM follow_ups
@@ -113,7 +110,6 @@ async function syncCustomerFollowUp(
     return
   }
 
-  // اگر قبلاً پیگیری خودکار باز وجود داشته باشد، همان را به‌روزرسانی می‌کنیم
   if (pendingItems.length > 0) {
     const mainId = Number(pendingItems[0].id)
 
@@ -128,7 +124,6 @@ async function syncCustomerFollowUp(
       ]
     )
 
-    // پاک‌سازی موارد خودکار تکراریِ باز، بدون دست‌زدن به پیگیری‌های دستی
     for (const item of pendingItems.slice(1)) {
       await db.run(
         `DELETE FROM follow_ups
@@ -140,7 +135,6 @@ async function syncCustomerFollowUp(
     return
   }
 
-  // اگر همین پیگیری قبلاً انجام شده، دوباره ساخته نشود
   const completed = await db.query(
     `SELECT id
      FROM follow_ups
@@ -154,7 +148,6 @@ async function syncCustomerFollowUp(
 
   if (completed.values?.length) return
 
-  // ایجاد پیگیری جدید به‌صورت خودکار
   await db.run(
     `INSERT INTO follow_ups
      (customer_id, topic, due_date, status, source)
@@ -167,16 +160,18 @@ async function syncCustomerFollowUp(
   )
 }
 
-// دریافت اطلاعات تکمیلی یک مشتری
 export async function getCustomerDetails(
   customerId: number
 ): Promise<CustomerDetails | null> {
   const db = await initializeDatabase()
 
+  await ensureCustomerDetailsSchema()
+
   const result = await db.query(
     `SELECT
       alternate_phone AS alternatePhone,
       city,
+      address,
       job,
       customer_type AS customerType,
       lead_source AS leadSource,
@@ -200,6 +195,7 @@ export async function getCustomerDetails(
   return {
     alternatePhone: row.alternatePhone || '',
     city: row.city || '',
+    address: row.address || '',
     job: row.job || '',
     customerType: row.customerType || 'عادی',
     leadSource: row.leadSource || '',
@@ -214,12 +210,13 @@ export async function getCustomerDetails(
   }
 }
 
-// ذخیره اطلاعات مشتری و هماهنگ‌سازی خودکار پیگیری
 export async function saveCustomerDetails(
   customerId: number,
   details: CustomerDetails
 ): Promise<void> {
   const db = await initializeDatabase()
+
+  await ensureCustomerDetailsSchema()
 
   if (!Number.isFinite(details.budget) || details.budget < 0) {
     throw new Error('بودجه مشتری معتبر نیست.')
@@ -229,6 +226,7 @@ export async function saveCustomerDetails(
     `UPDATE customers SET
       alternate_phone = ?,
       city = ?,
+      address = ?,
       job = ?,
       customer_type = ?,
       lead_source = ?,
@@ -245,6 +243,7 @@ export async function saveCustomerDetails(
     [
       details.alternatePhone.trim() || null,
       details.city.trim() || null,
+      details.address.trim() || null,
       details.job.trim() || null,
       details.customerType || 'عادی',
       details.leadSource.trim() || null,
