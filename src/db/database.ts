@@ -249,10 +249,149 @@ export async function updateCustomer(
   );
 }
 
+// حذف مشتری و بازگرداندن موجودی سفارش‌های فعال به انبار
 export async function deleteCustomer(id: number): Promise<void> {
   const d = await initializeDatabase();
+  let transactionStarted = false;
 
-  await d.run('DELETE FROM customers WHERE id=?', [id]);
+  try {
+    await d.beginTransaction();
+    transactionStarted = true;
+
+    // دریافت سفارش‌های فعال مشتری
+    const activeOrders = await d.query(
+      `SELECT id FROM orders
+       WHERE customer_id = ? AND status != 'لغو شده'`,
+      [id]
+    );
+
+    // بازگرداندن محصولات سفارش‌های فعال به انبار
+    for (const order of activeOrders.values || []) {
+      const orderId = Number(order.id);
+
+      const items = await d.query(
+        `SELECT product_id AS productId, quantity
+         FROM order_items
+         WHERE order_id = ?`,
+        [orderId]
+      );
+
+      for (const item of items.values || []) {
+        const quantity = Number(item.quantity || 0);
+        const productId = Number(item.productId || 0);
+
+        if (quantity <= 0 || productId <= 0) continue;
+
+        await d.run(
+          `UPDATE products
+           SET stock = stock + ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [quantity, productId],
+          false
+        );
+      }
+    }
+
+    // حذف پیگیری‌ها در صورت وجود جدول
+    const followUpTable = await d.query(
+      `SELECT name FROM sqlite_master
+       WHERE type = 'table' AND name = 'follow_ups'`
+    );
+
+    if (followUpTable.values?.length) {
+      await d.run(
+        'DELETE FROM follow_ups WHERE customer_id = ?',
+        [id],
+        false
+      );
+    }
+
+    // حذف اقساط مشتری
+    const installmentTable = await d.query(
+      `SELECT name FROM sqlite_master
+       WHERE type = 'table' AND name = 'installments'`
+    );
+
+    if (installmentTable.values?.length) {
+      await d.run(
+        'DELETE FROM installments WHERE customer_id = ?',
+        [id],
+        false
+      );
+    }
+
+    // حذف تسویه‌های مشتری
+    await d.run(
+      'DELETE FROM cancellation_settlements WHERE customer_id = ?',
+      [id],
+      false
+    );
+
+    // حذف پرداخت‌های مشتری
+    await d.run(
+      'DELETE FROM payments WHERE customer_id = ?',
+      [id],
+      false
+    );
+
+    // حذف اطلاعات وابسته به سفارش‌ها
+    const allOrders = await d.query(
+      'SELECT id FROM orders WHERE customer_id = ?',
+      [id]
+    );
+
+    for (const order of allOrders.values || []) {
+      const orderId = Number(order.id);
+
+      await d.run(
+        'DELETE FROM cancellation_settlements WHERE order_id = ?',
+        [orderId],
+        false
+      );
+
+      if (installmentTable.values?.length) {
+        await d.run(
+          'DELETE FROM installments WHERE order_id = ?',
+          [orderId],
+          false
+        );
+      }
+
+      await d.run(
+        'DELETE FROM order_items WHERE order_id = ?',
+        [orderId],
+        false
+      );
+    }
+
+    // حذف سفارش‌ها
+    await d.run(
+      'DELETE FROM orders WHERE customer_id = ?',
+      [id],
+      false
+    );
+
+    // حذف نهایی مشتری
+    await d.run(
+      'DELETE FROM customers WHERE id = ?',
+      [id],
+      false
+    );
+
+    await d.commitTransaction();
+    transactionStarted = false;
+
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        await d.rollbackTransaction();
+      } catch {
+        // حفظ خطای اصلی
+      }
+    }
+
+    throw error;
+  }
 }
 
 export async function getProducts(): Promise<ProductRecord[]> {
