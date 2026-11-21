@@ -31,6 +31,7 @@ import SmartEntry from './SmartEntry'
 const emptyCustomerDetails: CustomerDetails = {
   alternatePhone: '',
   city: '',
+  address: '',
   job: '',
   customerType: 'عادی',
   leadSource: '',
