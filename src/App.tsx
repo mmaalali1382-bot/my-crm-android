@@ -190,7 +190,14 @@ export default function App() {
     }
     start()
   }, [])
+  useEffect(() => {
+    if (tab !== 'دستیار ثبت') return
 
+    refreshAll().catch(err => {
+      console.error(err)
+      setError('به‌روزرسانی اطلاعات انجام نشد.')
+    })
+  }, [tab])
   const filtered = useMemo(() => customers.filter(c =>
     (c.name + c.mobile + c.company).toLowerCase().includes(query.toLowerCase())
   ), [customers, query])
