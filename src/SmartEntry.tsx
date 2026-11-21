@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react'
 import {
   addCustomer,
@@ -9,6 +8,7 @@ import {
   type CustomerRecord,
   type ProductRecord
 } from './db/database'
+import { addCustomOrder } from './db/customOrders'
 
 const digits = (s: string) =>
   s.replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
@@ -24,6 +24,8 @@ export default function SmartEntry() {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [productId, setProductId] = useState('')
+  const [customName, setCustomName] = useState('')
+  const [customPrice, setCustomPrice] = useState('')
   const [quantity, setQuantity] = useState('1')
   const [paid, setPaid] = useState('0')
   const [method, setMethod] = useState('کارت‌به‌کارت')
@@ -44,6 +46,8 @@ export default function SmartEntry() {
     load().catch(e => setMessage(String(e)))
   }, [])
 
+  const isCustom = productId === 'custom'
+
   const selectedProduct = products.find(
     p => String(p.id) === productId
   )
@@ -53,15 +57,21 @@ export default function SmartEntry() {
   )
 
   const qty = Number(quantity) || 0
-  const total = (selectedProduct?.price || 0) * qty
+
+  const unitPrice = isCustom
+    ? money(customPrice)
+    : selectedProduct?.price || 0
+
+  const total = unitPrice * qty
 
   function analyze() {
     const t = digits(raw)
     const mobile = t.match(/09\d{9}/)?.[0] || ''
+
     setPhone(mobile)
 
     const amount = t.match(
-      /(?:پرداخت|واریز|بیعانه|نقدی)\D{0,12}([\d,]+)/ 
+      /(?:پرداخت|واریز|بیعانه|نقدی)\D{0,12}([\d,]+)/
     )
 
     if (amount) setPaid(String(money(amount[1])))
@@ -70,7 +80,10 @@ export default function SmartEntry() {
     if (q) setQuantity(q[1])
 
     const found = products.find(p => t.includes(p.name))
-    if (found) setProductId(String(found.id))
+
+    if (found) {
+      setProductId(String(found.id))
+    }
 
     const withoutPhone = t.replace(/09\d{9}/, '').trim()
     const first = withoutPhone.split(/[،,\n]/)[0].trim()
@@ -84,7 +97,7 @@ export default function SmartEntry() {
 
   async function submit() {
     const count = Number(quantity)
-    const payment = Number(paid)
+    const payment = money(paid)
 
     if (!name.trim() && !existing) {
       setMessage('نام مشتری را وارد کن.')
@@ -96,14 +109,31 @@ export default function SmartEntry() {
       return
     }
 
-    if (!selectedProduct || !Number.isInteger(count) || count < 1) {
-      setMessage('محصول و تعداد را مشخص کن.')
+    if (!Number.isInteger(count) || count < 1) {
+      setMessage('تعداد باید حداقل یک باشد.')
       return
     }
 
-    if (count > selectedProduct.stock) {
-      setMessage('موجودی محصول کافی نیست.')
-      return
+    if (isCustom) {
+      if (!customName.trim()) {
+        setMessage('نام پک یا محصول متفرقه را وارد کن.')
+        return
+      }
+
+      if (unitPrice <= 0) {
+        setMessage('قیمت هر عدد را وارد کن.')
+        return
+      }
+    } else {
+      if (!selectedProduct) {
+        setMessage('محصول را انتخاب کن.')
+        return
+      }
+
+      if (count > selectedProduct.stock) {
+        setMessage('موجودی محصول کافی نیست.')
+        return
+      }
     }
 
     if (
@@ -116,13 +146,18 @@ export default function SmartEntry() {
     }
 
     const customerName = existing?.name || name.trim()
+    const itemName = isCustom
+      ? customName.trim()
+      : selectedProduct!.name
 
     const confirmed = window.confirm(
       `تأیید ثبت اطلاعات؟\n` +
       `مشتری: ${customerName}\n` +
       `شماره: ${phone}\n` +
-      `محصول: ${selectedProduct.name}\n` +
+      `نوع: ${isCustom ? 'پک یا محصول متفرقه' : 'محصول انبار'}\n` +
+      `نام: ${itemName}\n` +
       `تعداد: ${count}\n` +
+      `قیمت هر عدد: ${unitPrice.toLocaleString('fa-IR')} تومان\n` +
       `مبلغ سفارش: ${total.toLocaleString('fa-IR')} تومان\n` +
       `پرداخت: ${payment.toLocaleString('fa-IR')} تومان`
     )
@@ -146,12 +181,26 @@ export default function SmartEntry() {
         throw new Error('مشتری پیدا نشد.')
       }
 
-      await addOrder(
-        customer.id,
-        [{ productId: selectedProduct.id, quantity: count }],
-        0,
-        notes
-      )
+      if (isCustom) {
+        await addCustomOrder(
+          customer.id,
+          customName.trim(),
+          count,
+          unitPrice,
+          0,
+          notes
+        )
+      } else {
+        await addOrder(
+          customer.id,
+          [{
+            productId: selectedProduct!.id,
+            quantity: count
+          }],
+          0,
+          notes
+        )
+      }
 
       if (payment > 0) {
         await addPayment(
@@ -168,6 +217,8 @@ export default function SmartEntry() {
       setName('')
       setPhone('')
       setProductId('')
+      setCustomName('')
+      setCustomPrice('')
       setQuantity('1')
       setPaid('0')
       setNotes('')
@@ -243,19 +294,51 @@ export default function SmartEntry() {
           </small>
         )}
 
-        <label>محصول</label>
+        <label>نوع سفارش</label>
         <select
           value={productId}
           onChange={e => setProductId(e.target.value)}
         >
           <option value="">انتخاب محصول</option>
+
           {products.map(p => (
             <option key={p.id} value={p.id}>
               {p.name} — {p.price.toLocaleString('fa-IR')} تومان
               (موجودی {p.stock})
             </option>
           ))}
+
+          <option value="custom">
+            پک یا محصول متفرقه (بدون انبار)
+          </option>
         </select>
+
+        {isCustom && (
+          <>
+            <label>نام پک یا محصول متفرقه</label>
+            <input
+              value={customName}
+              onChange={e => setCustomName(e.target.value)}
+              placeholder="مثلاً پک اقتصادی پاییزه"
+            />
+
+            <label>قیمت فروش هر عدد (تومان)</label>
+            <input
+              value={customPrice}
+              onChange={e =>
+                setCustomPrice(
+                  digits(e.target.value).replace(/[^0-9]/g, '')
+                )
+              }
+              inputMode="numeric"
+              placeholder="قیمت هر پک"
+            />
+
+            <small>
+              این سفارش از موجودی انبار کم نمی‌کند.
+            </small>
+          </>
+        )}
 
         <label>تعداد</label>
         <input
