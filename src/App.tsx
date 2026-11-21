@@ -348,9 +348,7 @@ export default function App() {
 
         if (!created) {
           throw new Error('مشتری جدید در دیتابیس پیدا نشد.')
-        }
-
-        customerId = created.id
+                  customerId = created.id
 
         await updateCustomer(
           customerId,
@@ -618,6 +616,80 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
+        <NavigationDrawer
+          activeTab={tab}
+          onNavigate={setTab}
+        />
+
+        <div style={{ flex: 1 }}>
+          <div className="eyebrow">مدیریت هوشمند ارتباط با مشتری</div>
+          <h1>CRM شخصی</h1>
+        </div>
+
+        <button className="icon-btn" aria-label="اعلان‌ها">
+          <Bell size={21} />
+        </button>
+      </header>
+
+      {error && (
+        <div className="empty" role="alert" style={{ color: '#a33c48' }}>
+          {error}
+          <button onClick={() => setError('')} style={{ marginRight: 10 }}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {tab === 'خانه' && (
+        <main>
+          <section className="welcome">
+            <div className="welcome-icon"><Sparkles /></div>
+            <div>
+              <div className="eyebrow light">داشبورد شما</div>
+              <h2>سلام، خوش اومدی!</h2>
+              <p>مدیریت مشتری‌ها، محصولات و سفارش‌ها.</p>
+            </div>
+          </section>
+
+          <div className="section-title">
+            <h3>عملکرد فروش</h3>
+            <span>تومان</span>
+          </div>
+
+          <div className="stats">
+            <article>
+              <Wallet />
+              <strong>{loading ? '...' : money(todaySales)}</strong>
+              <small>فروش امروز</small>
+            </article>
+            <article>
+              <CalendarDays />
+              <strong>{loading ? '...' : money(weekSales)}</strong>
+              <small>فروش این هفته</small>
+            </article>
+            <article>
+              <Target />
+              <strong>{loading ? '...' : money(monthSales)}</strong>
+              <small>فروش این ماه</small>
+            </article>
+          </div>
+
+          <section className="assistant" style={{ marginTop: 14 }}>
+            <div className="assistant-head">
+              <Target />
+              <b>هدف‌گذاری فروش</b>
+              <button
+                onClick={openGoalForm}
+                style={{
+                  marginRight: 'auto',
+                  padding: '7px 10px',
+                  borderRadius: 8
+                }}
+              >
+                <Pencil size={15} /> ویرایش هدف‌ها
+              </button>
+            </div>
+                  <header className="topbar">
         <NavigationDrawer
           activeTab={tab}
           onNavigate={setTab}
@@ -967,8 +1039,7 @@ export default function App() {
           </div>
 
           {loading && <p className="empty">در حال دریافت سفارش‌ها...</p>}
-
-          {!loading && orders.map(order => (
+                    {!loading && orders.map(order => (
             <article className="customer customer-expanded" key={order.id}>
               <div className="customer-main">
                 <div className="avatar"><ShoppingCart size={19} /></div>
@@ -997,7 +1068,7 @@ export default function App() {
                     style={{ padding: 8, borderRadius: 8, border: '1px solid #ccc', maxWidth: 170 }}
                   >
                     {statuses.map(s => <option key={s} value={s}>{s}</option>)}
-                                      </select>
+                  </select>
                 </label>
               </div>
             </article>
@@ -1318,93 +1389,3 @@ export default function App() {
                         disabled={quantity >= p.stock || p.stock <= 0}
                         style={{ padding: 6 }}
                       >
-                        <Plus size={17} />
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            {cart.length > 0 && (
-              <div style={{ padding: 12, background: '#f4f6fb', borderRadius: 12, marginTop: 12 }}>
-                <b>اقلام انتخاب‌شده</b>
-                {cart.map(item => {
-                  const p = products.find(x => x.id === item.productId)
-                  if (!p) return null
-
-                  return (
-                    <div key={item.productId} style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      paddingTop: 8
-                    }}>
-                      <small>{p.name} × {money(item.quantity)}</small>
-                      <small>{money(p.price * item.quantity)} تومان</small>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            <label>
-              تخفیف (تومان)
-              <input
-                type="number"
-                min="0"
-                inputMode="numeric"
-                value={orderDiscount}
-                onChange={e => setOrderDiscount(e.target.value)}
-              />
-            </label>
-
-            <label>
-              توضیحات سفارش (اختیاری)
-              <textarea
-                rows={2}
-                value={orderNotes}
-                onChange={e => setOrderNotes(e.target.value)}
-                placeholder="توضیحات..."
-              />
-            </label>
-
-            <div style={{
-              padding: 14,
-              background: '#f4f6fb',
-              borderRadius: 12,
-              display: 'grid',
-              gap: 8,
-              marginTop: 12
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>مبلغ کل</span><b>{money(cartTotal)} تومان</b>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>تخفیف</span><b>{money(discountValue)} تومان</b>
-              </div>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                borderTop: '1px solid #d8deeb',
-                paddingTop: 10
-              }}>
-                <b>مبلغ نهایی</b>
-                <b style={{ color: '#315da8' }}>{money(finalTotal)} تومان</b>
-              </div>
-            </div>
-
-            <button
-              className="primary full"
-              onClick={saveOrder}
-              disabled={!orderCustomer || !cart.length || saving || discountValue > cartTotal}
-              style={{ marginTop: 14 }}
-            >
-              <CheckCircle size={18} />
-              {saving ? 'در حال ثبت سفارش...' : 'تأیید و ثبت سفارش'}
-            </button>
-          </section>
-        </div>
-      )}
-    </div>
-  )
-}
