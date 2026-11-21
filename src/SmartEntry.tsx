@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react'
 import {
   addCustomer,
@@ -8,6 +9,10 @@ import {
   type CustomerRecord,
   type ProductRecord
 } from './db/database'
+import {
+  getCustomerDetails,
+  saveCustomerDetails
+} from './db/customerDetails'
 import { addCustomOrder } from './db/customOrders'
 
 const digits = (s: string) =>
@@ -23,6 +28,7 @@ export default function SmartEntry() {
   const [products, setProducts] = useState<ProductRecord[]>([])
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  const [address, setAddress] = useState('')
   const [productId, setProductId] = useState('')
   const [customName, setCustomName] = useState('')
   const [customPrice, setCustomPrice] = useState('')
@@ -71,13 +77,21 @@ export default function SmartEntry() {
     setPhone(mobile)
 
     const amount = t.match(
-      /(?:پرداخت|واریز|بیعانه|نقدی)\D{0,12}([\d,]+)/
+      /(?:پرداخت|واریز|بیعانه|نقدی)\D{0,12}([\d,]+)/ 
     )
 
     if (amount) setPaid(String(money(amount[1])))
 
     const q = t.match(/(\d+)\s*(?:عدد|تا|بسته)/)
     if (q) setQuantity(q[1])
+
+    const addressMatch = t.match(
+      /(?:آدرس|نشانی)\s*[:：]?\s*(.+?)(?=\s*(?:پرداخت|واریز|بیعانه|موبایل|تلفن|شماره|محصول|سفارش)\b|$)/i
+    )
+
+    if (addressMatch) {
+      setAddress(addressMatch[1].trim().replace(/[،,]+$/, ''))
+    }
 
     const found = products.find(p => t.includes(p.name))
 
@@ -154,6 +168,7 @@ export default function SmartEntry() {
       `تأیید ثبت اطلاعات؟\n` +
       `مشتری: ${customerName}\n` +
       `شماره: ${phone}\n` +
+      `آدرس: ${address.trim() || 'ثبت نشده'}\n` +
       `نوع: ${isCustom ? 'پک یا محصول متفرقه' : 'محصول انبار'}\n` +
       `نام: ${itemName}\n` +
       `تعداد: ${count}\n` +
@@ -179,6 +194,27 @@ export default function SmartEntry() {
 
       if (!customer) {
         throw new Error('مشتری پیدا نشد.')
+      }
+
+      if (address.trim()) {
+        const oldDetails = await getCustomerDetails(customer.id)
+
+        await saveCustomerDetails(customer.id, {
+          alternatePhone: oldDetails?.alternatePhone || '',
+          city: oldDetails?.city || '',
+          job: oldDetails?.job || '',
+          customerType: oldDetails?.customerType || '',
+          leadSource: oldDetails?.leadSource || '',
+          preferredContact: oldDetails?.preferredContact || '',
+          interests: oldDetails?.interests || '',
+          productsWanted: oldDetails?.productsWanted || '',
+          budget: oldDetails?.budget || 0,
+          lastContact: oldDetails?.lastContact || '',
+          negotiationResult: oldDetails?.negotiationResult || '',
+          priority: oldDetails?.priority || '',
+          followUpDate: oldDetails?.followUpDate || '',
+          address: address.trim()
+        })
       }
 
       if (isCustom) {
@@ -211,11 +247,12 @@ export default function SmartEntry() {
         )
       }
 
-      setMessage('اطلاعات با موفقیت ثبت شد.')
+      setMessage('اطلاعات مشتری، آدرس، سفارش و پرداخت با موفقیت ثبت شد.')
 
       setRaw('')
       setName('')
       setPhone('')
+      setAddress('')
       setProductId('')
       setCustomName('')
       setCustomPrice('')
@@ -259,7 +296,7 @@ export default function SmartEntry() {
           value={raw}
           onChange={e => setRaw(e.target.value)}
           rows={4}
-          placeholder="مثلاً: علی رضایی 09123456789 دو عدد شامپو مورینگا، پرداخت ۵۰۰۰۰۰ تومان"
+          placeholder="مثلاً: علی رضایی 09123456789 آدرس: تهران، خیابان ولیعصر، پرداخت ۵۰۰۰۰۰ تومان"
           style={{
             width: '100%',
             padding: 12,
@@ -293,6 +330,21 @@ export default function SmartEntry() {
             این شماره قبلاً با نام «{existing.name}» ثبت شده است.
           </small>
         )}
+
+        <label>آدرس مشتری</label>
+        <textarea
+          value={address}
+          onChange={e => setAddress(e.target.value)}
+          rows={2}
+          placeholder="آدرس کامل مشتری"
+          style={{
+            width: '100%',
+            padding: 12,
+            borderRadius: 10,
+            border: '1px solid #ccd2dc',
+            font: 'inherit'
+          }}
+        />
 
         <label>نوع سفارش</label>
         <select
