@@ -85,9 +85,9 @@ export default function SmartEntry() {
     const q = t.match(/(\d+)\s*(?:عدد|تا|بسته)/)
     if (q) setQuantity(q[1])
 
-    const addressMatch = t.match(
-      /(?:آدرس|نشانی)\s*[:：]?\s*(.+?)(?=\s*(?:پرداخت|واریز|بیعانه|موبایل|تلفن|شماره|محصول|سفارش)\b|$)/i
-    )
+const addressMatch = t.match(
+  /(?:آدرس|نشانی)\s*[:：]?\s*(.+?)(?=\s*(?:پرداخت|واریز|بیعانه|موبایل|تلفن|شماره|محصول|سفارش)(?:\s|[:：]|$)|$)/i
+)
 
     if (addressMatch) {
       setAddress(addressMatch[1].trim().replace(/[،,]+$/, ''))
