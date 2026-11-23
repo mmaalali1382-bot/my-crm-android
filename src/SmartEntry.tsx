@@ -1,19 +1,12 @@
 
 import { useEffect, useState } from 'react'
 import {
-  addCustomer,
-  addOrder,
-  addPayment,
   getCustomers,
   getProducts,
   type CustomerRecord,
   type ProductRecord
 } from './db/database'
-import {
-  getCustomerDetails,
-  saveCustomerDetails
-} from './db/customerDetails'
-import { addCustomOrder } from './db/customOrders'
+import { addSmartEntry } from './db/smartEntry'
 
 const digits = (s: string) =>
   s.replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
@@ -78,7 +71,7 @@ export default function SmartEntry() {
     setPhone(mobile)
 
     const amount = t.match(
-      /(?:پرداخت|واریز|بیعانه|نقدی)\D{0,12}([\d,]+)/ 
+      /(?:پرداخت|واریز|بیعانه|نقدی)\D{0,12}([\d,]+)/
     )
 
     if (amount) setPaid(String(money(amount[1])))
@@ -86,9 +79,9 @@ export default function SmartEntry() {
     const q = t.match(/(\d+)\s*(?:عدد|تا|بسته)/)
     if (q) setQuantity(q[1])
 
-const addressMatch = t.match(
-  /(?:آدرس|نشانی)\s*[:：]?\s*(.+?)(?=\s*(?:پرداخت|واریز|بیعانه|موبایل|تلفن|شماره|محصول|سفارش)(?:\s|[:：]|$)|$)/i
-)
+    const addressMatch = t.match(
+      /(?:آدرس|نشانی)\s*[:：]?\s*(.+?)(?=\s*(?:پرداخت|واریز|بیعانه|موبایل|تلفن|شماره|محصول|سفارش)(?:\s|[:：]|$)|$)/i
+    )
 
     if (addressMatch) {
       setAddress(addressMatch[1].trim().replace(/[،,]+$/, ''))
@@ -139,9 +132,10 @@ const addressMatch = t.match(
         setMessage('قیمت هر عدد را وارد کن.')
         return
       }
+
       if (money(customCost) <= 0) {
-  setMessage('بهای تمام‌شده هر پک را وارد کن.')
-  return
+        setMessage('بهای تمام‌شده هر پک را وارد کن.')
+        return
       }
     } else {
       if (!selectedProduct) {
@@ -188,69 +182,19 @@ const addressMatch = t.match(
     setMessage('')
 
     try {
-      if (!existing) {
-        await addCustomer(name.trim(), digits(phone))
-      }
-
-      const freshCustomers = await getCustomers()
-      const customer = freshCustomers.find(
-        c => c.phone === digits(phone)
-      )
-
-      if (!customer) {
-        throw new Error('مشتری پیدا نشد.')
-      }
-
-      if (address.trim()) {
-        const oldDetails = await getCustomerDetails(customer.id)
-
-        await saveCustomerDetails(customer.id, {
-          alternatePhone: oldDetails?.alternatePhone || '',
-          city: oldDetails?.city || '',
-          job: oldDetails?.job || '',
-          customerType: oldDetails?.customerType || '',
-          leadSource: oldDetails?.leadSource || '',
-          preferredContact: oldDetails?.preferredContact || '',
-          interests: oldDetails?.interests || '',
-          productsWanted: oldDetails?.productsWanted || '',
-          budget: oldDetails?.budget || 0,
-          lastContact: oldDetails?.lastContact || '',
-          negotiationResult: oldDetails?.negotiationResult || '',
-          priority: oldDetails?.priority || '',
-          followUpDate: oldDetails?.followUpDate || '',
-          address: address.trim()
-        })
-      }
-
-      if (isCustom) {
-        await addCustomOrder(
-          customer.id,
-          customName.trim(),
-          count,
-          unitPrice,
-          money(customCost),
-          notes
-        )
-      } else {
-        await addOrder(
-          customer.id,
-          [{
-            productId: selectedProduct!.id,
-            quantity: count
-          }],
-          0,
-          notes
-        )
-      }
-
-      if (payment > 0) {
-        await addPayment(
-          customer.id,
-          payment,
-          method,
-          'پرداخت ثبت‌شده از دستیار ورود'
-        )
-      }
+      await addSmartEntry({
+        name: name.trim(),
+        phone: digits(phone),
+        address: address.trim(),
+        productId: isCustom ? null : selectedProduct!.id,
+        customName: isCustom ? customName.trim() : '',
+        customPrice: isCustom ? unitPrice : 0,
+        customCost: isCustom ? money(customCost) : 0,
+        quantity: count,
+        paid: payment,
+        method,
+        notes
+      })
 
       setMessage('اطلاعات مشتری، آدرس، سفارش و پرداخت با موفقیت ثبت شد.')
 
@@ -391,17 +335,19 @@ const addressMatch = t.match(
               inputMode="numeric"
               placeholder="قیمت هر پک"
             />
-<label>بهای تمام‌شده هر پک (تومان)</label>
-<input
-  value={customCost}
-  onChange={e =>
-    setCustomCost(
-      digits(e.target.value).replace(/[^0-9]/g, '')
-    )
-  }
-  inputMode="numeric"
-  placeholder="قیمت خرید هر پک"
-/>
+
+            <label>بهای تمام‌شده هر پک (تومان)</label>
+            <input
+              value={customCost}
+              onChange={e =>
+                setCustomCost(
+                  digits(e.target.value).replace(/[^0-9]/g, '')
+                )
+              }
+              inputMode="numeric"
+              placeholder="قیمت خرید هر پک"
+            />
+
             <small>
               این سفارش از موجودی انبار کم نمی‌کند.
             </small>
