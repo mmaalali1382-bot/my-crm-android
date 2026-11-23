@@ -503,45 +503,7 @@ export async function recordInstallmentPayment(
         `مبلغ دریافت بیشتر از مانده قسط است. مانده قسط: ${Math.floor(remainingInstallment)} تومان`
       )
     }
-
-        const balanceResult = await db.query(
-      `SELECT
-        COALESCE((
-          SELECT SUM(final_total)
-          FROM orders
-          WHERE customer_id = ?
-            AND status != 'لغو شده'
-        ), 0) -
-        MAX(
-          0,
-          COALESCE((
-            SELECT SUM(amount)
-            FROM payments
-            WHERE customer_id = ?
-          ), 0) -
-          COALESCE((
-            SELECT SUM(paid_amount)
-            FROM cancellation_settlements
-            WHERE customer_id = ?
-          ), 0)
-        ) AS balance`,
-      [customerId, customerId, customerId]
-    )
     
-    const customerBalance = Number(
-      balanceResult.values?.[0]?.balance || 0
-    )
-
-    if (customerBalance <= 0) {
-      throw new Error('این مشتری بدهی پرداخت‌نشده ندارد.')
-    }
-
-    if (amount > customerBalance) {
-      throw new Error(
-        `مبلغ دریافت بیشتر از بدهی مشتری است. مانده بدهی: ${Math.floor(customerBalance)} تومان`
-      )
-    }
-
     const newPaidAmount = paidAmount + amount
 
     const newStatus =
