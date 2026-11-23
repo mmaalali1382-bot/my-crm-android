@@ -357,18 +357,40 @@ export async function updateInstallment(
   }
 
   const result = await db.query(
-    `SELECT amount, paid_amount
-     FROM installments
-     WHERE id = ?`,
-    [id]
-  )
+  `SELECT amount, paid_amount, order_id
+   FROM installments
+   WHERE id = ?`,
+  [id]
+)
 
   const installment = result.values?.[0]
 
   if (!installment) {
     throw new Error('قسط موردنظر پیدا نشد.')
   }
+  
+const orderResult = await db.query(
+  'SELECT final_total FROM orders WHERE id = ?',
+  [installment.order_id]
+)
 
+const orderTotal = Number(orderResult.values?.[0]?.final_total || 0)
+
+const otherInstallmentsResult = await db.query(
+  `SELECT COALESCE(SUM(amount), 0) AS totalAmount
+   FROM installments
+   WHERE order_id = ? AND id != ?`,
+  [installment.order_id, id]
+)
+
+const otherInstallments = Number(
+  otherInstallmentsResult.values?.[0]?.totalAmount || 0
+)
+
+if (otherInstallments + data.amount > orderTotal) {
+  throw new Error('مجموع اقساط نمی‌تواند از مبلغ سفارش بیشتر باشد.')
+}
+  
   const paidAmount = Number(installment.paid_amount || 0)
 
   if (data.amount < paidAmount) {
