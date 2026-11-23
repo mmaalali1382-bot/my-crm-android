@@ -1034,8 +1034,10 @@ export default function App() {
 
       {tab === 'پشتیبان‌گیری' && <Backup />}
 
-      {tab === 'دستیار ثبت' && <SmartEntry />}
-      
+      {tab === 'دستیار ثبت' && (
+  <SmartEntry onSaved={refreshAll} />
+)}
+     
       {showGoalForm && (
         <div className="modal-backdrop" onClick={() => !savingGoals && setShowGoalForm(false)}>
           <section className="modal customer-form" onClick={e => e.stopPropagation()}>
