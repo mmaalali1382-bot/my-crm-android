@@ -467,7 +467,7 @@ export async function recordInstallmentPayment(
       )
     }
 
-    const balanceResult = await db.query(
+        const balanceResult = await db.query(
       `SELECT
         COALESCE((
           SELECT SUM(final_total)
@@ -475,14 +475,22 @@ export async function recordInstallmentPayment(
           WHERE customer_id = ?
             AND status != 'لغو شده'
         ), 0) -
-        COALESCE((
-          SELECT SUM(amount)
-          FROM payments
-          WHERE customer_id = ?
-        ), 0) AS balance`,
-      [customerId, customerId]
+        MAX(
+          0,
+          COALESCE((
+            SELECT SUM(amount)
+            FROM payments
+            WHERE customer_id = ?
+          ), 0) -
+          COALESCE((
+            SELECT SUM(paid_amount)
+            FROM cancellation_settlements
+            WHERE customer_id = ?
+          ), 0)
+        ) AS balance`,
+      [customerId, customerId, customerId]
     )
-
+    
     const customerBalance = Number(
       balanceResult.values?.[0]?.balance || 0
     )
