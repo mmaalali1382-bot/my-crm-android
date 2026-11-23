@@ -15,7 +15,11 @@ const digits = (s: string) =>
 const money = (s: string) =>
   Number(digits(s).replace(/[^0-9]/g, '')) || 0
 
-export default function SmartEntry() {
+export default function SmartEntry({
+  onSaved
+}: {
+  onSaved: () => Promise<void> | void
+}) {
   const [raw, setRaw] = useState('')
   const [customers, setCustomers] = useState<CustomerRecord[]>([])
   const [products, setProducts] = useState<ProductRecord[]>([])
@@ -80,8 +84,8 @@ export default function SmartEntry() {
     if (q) setQuantity(q[1])
 
     const addressMatch = t.match(
-  /(?:آدرس(?:\s+مشتری)?|نشانی(?:\s+مشتری)?)\s*[:：]?\s*(.+?)(?=\s*(?:پرداخت|واریز|بیعانه|موبایل|تلفن|شماره|محصول|سفارش|تعداد|قیمت)(?:\s|[:：]|$)|$)/i
-)
+      /(?:آدرس(?:\s+مشتری)?|نشانی(?:\s+مشتری)?)\s*[:：]?\s*(.+?)(?=\s*(?:پرداخت|واریز|بیعانه|موبایل|تلفن|شماره|محصول|سفارش|تعداد|قیمت)(?:\s|[:：]|$)|$)/i
+    )
 
     if (addressMatch) {
       setAddress(addressMatch[1].trim().replace(/[،,]+$/, ''))
@@ -211,6 +215,7 @@ export default function SmartEntry() {
       setNotes('')
 
       await load()
+      await onSaved()
     } catch (e) {
       setMessage(
         e instanceof Error ? e.message : 'خطا در ثبت اطلاعات'
