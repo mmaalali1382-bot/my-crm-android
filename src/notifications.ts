@@ -26,13 +26,17 @@ export async function syncFollowUpNotifications(
 
     const pending = await LocalNotifications.getPending()
 
-    if (pending.notifications.length > 0) {
-      await LocalNotifications.cancel({
-        notifications: pending.notifications.map(item => ({
-          id: item.id
-        }))
-      })
-    }
+const crmNotifications = pending.notifications.filter(
+  item => item.title === 'یادآوری پیگیری مشتری'
+)
+
+if (crmNotifications.length > 0) {
+  await LocalNotifications.cancel({
+    notifications: crmNotifications.map(item => ({
+      id: item.id
+    }))
+  })
+}
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)
