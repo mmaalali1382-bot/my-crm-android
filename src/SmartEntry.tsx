@@ -32,6 +32,7 @@ export default function SmartEntry() {
   const [productId, setProductId] = useState('')
   const [customName, setCustomName] = useState('')
   const [customPrice, setCustomPrice] = useState('')
+  const [customCost, setCustomCost] = useState('')
   const [quantity, setQuantity] = useState('1')
   const [paid, setPaid] = useState('0')
   const [method, setMethod] = useState('کارت‌به‌کارت')
@@ -138,6 +139,10 @@ const addressMatch = t.match(
         setMessage('قیمت هر عدد را وارد کن.')
         return
       }
+      if (money(customCost) <= 0) {
+  setMessage('بهای تمام‌شده هر پک را وارد کن.')
+  return
+      }
     } else {
       if (!selectedProduct) {
         setMessage('محصول را انتخاب کن.')
@@ -223,7 +228,7 @@ const addressMatch = t.match(
           customName.trim(),
           count,
           unitPrice,
-          0,
+          money(customCost),
           notes
         )
       } else {
@@ -256,6 +261,7 @@ const addressMatch = t.match(
       setProductId('')
       setCustomName('')
       setCustomPrice('')
+      setCustomCost('')
       setQuantity('1')
       setPaid('0')
       setNotes('')
@@ -385,7 +391,17 @@ const addressMatch = t.match(
               inputMode="numeric"
               placeholder="قیمت هر پک"
             />
-
+<label>بهای تمام‌شده هر پک (تومان)</label>
+<input
+  value={customCost}
+  onChange={e =>
+    setCustomCost(
+      digits(e.target.value).replace(/[^0-9]/g, '')
+    )
+  }
+  inputMode="numeric"
+  placeholder="قیمت خرید هر پک"
+/>
             <small>
               این سفارش از موجودی انبار کم نمی‌کند.
             </small>
