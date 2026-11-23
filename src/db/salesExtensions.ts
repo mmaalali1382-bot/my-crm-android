@@ -444,16 +444,6 @@ export async function deleteInstallment(id: number): Promise<void> {
   if (!installment) {
     throw new Error('قسط موردنظر پیدا نشد.')
   }
-
-  if (Number(installment.paid_amount || 0) > 0) {
-    throw new Error(
-      'این قسط دریافت وجه دارد. برای حفظ سوابق مالی، حذف آن مجاز نیست.'
-    )
-  }
-
-  await db.run('DELETE FROM installments WHERE id = ?', [id])
-}
-
 const orderResult = await db.query(
   'SELECT status FROM orders WHERE id = ?',
   [installment.order_id]
@@ -465,6 +455,15 @@ if (!orderResult.values?.length) {
 
 if (orderResult.values[0].status === 'لغو شده') {
   throw new Error('برای سفارش لغوشده نمی‌توان وجه قسط دریافت کرد.')
+}
+  
+  if (Number(installment.paid_amount || 0) > 0) {
+    throw new Error(
+      'این قسط دریافت وجه دارد. برای حفظ سوابق مالی، حذف آن مجاز نیست.'
+    )
+  }
+
+  await db.run('DELETE FROM installments WHERE id = ?', [id])
 }
 
 // ======================================
