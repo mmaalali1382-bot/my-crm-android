@@ -297,7 +297,22 @@ export async function addInstallment(data: {
   if (order.status === 'لغو شده') {
     throw new Error('برای سفارش لغوشده نمی‌توان قسط ثبت کرد.')
   }
+  
+const existingInstallmentsResult = await db.query(
+  `SELECT COALESCE(SUM(amount), 0) AS totalAmount
+   FROM installments
+   WHERE order_id = ?`,
+  [data.orderId]
+)
 
+const existingInstallments = Number(
+  existingInstallmentsResult.values?.[0]?.totalAmount || 0
+)
+
+if (existingInstallments + data.amount > Number(order.final_total)) {
+  throw new Error('مجموع اقساط نمی‌تواند از مبلغ سفارش بیشتر باشد.')
+}
+  
   const customerResult = await db.query(
     'SELECT id FROM customers WHERE id = ?',
     [data.customerId]
