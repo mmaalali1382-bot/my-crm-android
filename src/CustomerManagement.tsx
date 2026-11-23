@@ -351,6 +351,11 @@ export default function CustomerManagement({
                 <h4>جزئیات مشتری</h4>
 
                 <p>
+  <b>آدرس:</b>{' '}
+  {detail?.address || 'ثبت نشده'}
+</p>
+                
+                <p>
                   <b>شماره دوم:</b>{' '}
                   {detail?.alternatePhone || 'ثبت نشده'}
                 </p>
