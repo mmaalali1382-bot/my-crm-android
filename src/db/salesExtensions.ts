@@ -370,12 +370,20 @@ export async function updateInstallment(
   }
   
 const orderResult = await db.query(
-  'SELECT final_total FROM orders WHERE id = ?',
+  'SELECT final_total, status FROM orders WHERE id = ?',
   [installment.order_id]
 )
 
-const orderTotal = Number(orderResult.values?.[0]?.final_total || 0)
+if (!orderResult.values?.length) {
+  throw new Error('سفارش مربوط به این قسط پیدا نشد.')
+}
 
+if (orderResult.values[0].status === 'لغو شده') {
+  throw new Error('قسط سفارش لغوشده قابل ویرایش نیست.')
+}
+
+const orderTotal = Number(orderResult.values[0].final_total || 0)
+  
 const otherInstallmentsResult = await db.query(
   `SELECT COALESCE(SUM(amount), 0) AS totalAmount
    FROM installments
