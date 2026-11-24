@@ -9,6 +9,7 @@ type FollowUpRecord = {
   id: number
   customerId: number
   customerName: string
+  customerPhone: string
   topic: string
   dueDate: string
   status: string
@@ -58,6 +59,7 @@ export default function FollowUps() {
             f.id,
             f.customer_id AS customerId,
             c.name AS customerName,
+            c.phone AS customerPhone,
             f.topic,
             f.due_date AS dueDate,
             f.status
